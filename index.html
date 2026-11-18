@@ -226,6 +226,7 @@ ol.how{margin:6px 0 0;padding-left:22px;display:flex;flex-direction:column;gap:6
 
 <script src="videos.js"></script>
 <script>
+const APP_VERSION='2026-11-18 · cross-training 2';
 /* ============ utilities ============ */
 const DAYN=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
 const DAYL=['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
@@ -491,6 +492,7 @@ function generatePlan(p){
   }
   const k=(+p.age>=50||p.experience==='new')?3:4;
   weeks.forEach((w,i)=>{w.i=i});
+  if(p.run&&p.run.defaulted&&(evs.some(isRun)||p.sports==='both'))notes.push(`Running uses starter numbers (up to ${fmtDist(p.run.maxMiles,p)} a week) because the Running section in Setup was left blank. Add your own numbers there for a better fit.`);
   const hybrid=trainsBoth(p,evs);
   if(hybrid)weeks.forEach(w=>crossTrain(p,w));
   for(const e of evs.filter(e=>e.priority!=='A')){
@@ -1058,6 +1060,7 @@ function vToday(){
   let html=exampleBanner();
   html+=`<div class="row" style="justify-content:space-between"><div><div class="eyebrow">${found?`Week ${found.week.i+1} of ${pl.N} · ${phaseName(found.week)}`:'Outside your plan'}</div></div>
     <div class="row"><button class="btn" data-act="wk" data-n="-7" aria-label="Previous week">←</button><button class="btn" data-act="today">Today</button><button class="btn" data-act="wk" data-n="7" aria-label="Next week">→</button></div></div>`;
+  for(const nt of pl.notes.filter(x=>/mark it as an A race/.test(x)))html+=`<div class="banner"><span><b>Heads up.</b> ${esc(nt)}</span><a class="btn" href="#setup">Open Setup</a></div>`;
   if(checkinDue())html+=`<div class="card checkin-card"><div><div class="eyebrow">Check-in due</div><h2 style="margin-top:4px">How have the last two weeks gone?</h2><p class="small muted" style="margin-top:4px">Two minutes. Your plan adjusts from next Monday to fit how you’re doing and your schedule.</p></div><a class="btn primary" href="#checkin">Check in</a></div>`;
   html+=`<div class="strip" role="group" aria-label="Days of this week">`;
   for(let i=0;i<7;i++){
@@ -1368,6 +1371,7 @@ function vSetup(){
   <div class="row"><button class="btn primary" type="submit">Build my plan</button>${state.example?'':'<button class="btn" type="button" data-act="reset">Start over</button>'}</div>
   <div class="card"><div class="eyebrow">Move to another device</div><p class="small muted" style="margin-top:4px">Your plan is saved in this browser only. Save your details as a file and load it on your phone or another computer.</p>
   <div class="row" style="margin-top:10px"><button class="btn" type="button" data-act="savejson" ${state.example?'disabled':''}>Save my details</button><label class="btn" for="f-load">Load details file<input type="file" id="f-load" accept=".json,application/json" hidden></label></div></div>
+  <p class="small muted">WattFire version ${APP_VERSION}</p>
   <div id="reset-confirm" hidden class="banner"><span>Clear your plan and checkmarks on this device?</span><span class="row"><button class="btn" type="button" data-act="reset-no">Keep</button><button class="btn primary" type="button" data-act="reset-yes">Clear</button></span></div>
   </form>`;
 }
@@ -1384,7 +1388,11 @@ function readForm(){
   const units=v('f-run-units'),rf=id=>+v(id)?fromU(+v(id),units):'';
   p.run={units,raceDist:v('f-run-rd'),raceTime:v('f-run-rt'),curMiles:rf('f-run-cur'),maxMiles:rf('f-run-max'),longest:rf('f-run-long')};
   if(p.run.raceDist&&!parseTime(p.run.raceTime))errs.push('Enter your race time like 27:30 or 1:58:00.');
-  if(events.some(isRun)&&!p.run.maxMiles)errs.push('Add your most running per week under Running.');
+  if(events.some(isRun)||p.sports==='both'){
+    if(!p.run.curMiles)p.run.curMiles=10;
+    if(!p.run.maxMiles){p.run.maxMiles=Math.max(20,Math.round(p.run.curMiles*1.6));p.run.defaulted=true}
+    if(!p.run.longest)p.run.longest=Math.max(3,Math.round(p.run.curMiles*0.3));
+  }
   if(p.run.maxMiles&&p.run.curMiles>p.run.maxMiles)p.run.maxMiles=p.run.curMiles;
   if(!events.length)errs.push('Add at least one event.');
   if(events.some(e=>!e.date))errs.push('Every event needs a date.');
@@ -1697,9 +1705,10 @@ document.addEventListener('submit',e=>{
   if(e.target.id==='checkin-form'){e.preventDefault();submitCheckin();return}
   if(e.target.id!=='setup-form')return;e.preventDefault();
   const {p,errs}=readForm();const err=document.getElementById('form-err');
-  if(errs.length){err.textContent=errs.join(' ');err.hidden=false;return}
+  const showErr=m=>{err.textContent=m;err.hidden=false;err.scrollIntoView({block:'center'});toast(m)};
+  if(errs.length){showErr(errs.join(' '));return}
   const plan=generatePlan(p);
-  if(plan.error){err.textContent=plan.error;err.hidden=false;return}
+  if(plan.error){showErr(plan.error);return}
   const done=state.example?{}:state.store.done;
   state.store={profile:p,done,example:false};state.example=false;state.plan=plan;saveStore();
   state.sel=dkey(today()<plan.start?plan.start:today());
