@@ -1,0 +1,936 @@
+<title>Switchback Ride Planner</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500&display=swap">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<style>
+/* Layout: one-column training log. Sticky header + tab bar; a day card is the hero; zone colors are the only loud color. */
+:root{
+  --bg:#EEF2EF; --surface:#FFFFFF; --sunk:#E4EAE6; --ink:#13201B; --muted:#56655E; --line:#D3DCD6;
+  --accent:#1D5C47; --accent-ink:#FFFFFF; --accent-soft:#DCEAE2; --warn:#9A5B00; --warn-soft:#FBEFD9;
+  --z1:#8C9A93; --z2:#2F78C0; --z3:#27936A; --ss:#A39317; --z4:#D99A0E; --z5:#DB6112; --z6:#CC3434; --z7:#8A39B3;
+  --f-display:"Barlow Condensed","Arial Narrow",system-ui,sans-serif;
+  --f-body:"Inter",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:"JetBrains Mono",ui-monospace,"SFMono-Regular",Menlo,monospace;
+  --r:10px;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0E1412; --surface:#17201C; --sunk:#111915; --ink:#E5ECE8; --muted:#97A69F; --line:#2A3631;
+  --accent:#6CC3A0; --accent-ink:#0E1412; --accent-soft:#1C2F27; --warn:#F2B866; --warn-soft:#2E2414;
+  --z1:#9AA8A1; --z2:#5FA3E8; --z3:#4CC28F; --ss:#CDBD3A; --z4:#F0B637; --z5:#F2803A; --z6:#EF5E5E; --z7:#B672DB;
+  color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0E1412; --surface:#17201C; --sunk:#111915; --ink:#E5ECE8; --muted:#97A69F; --line:#2A3631;
+  --accent:#6CC3A0; --accent-ink:#0E1412; --accent-soft:#1C2F27; --warn:#F2B866; --warn-soft:#2E2414;
+  --z1:#9AA8A1; --z2:#5FA3E8; --z3:#4CC28F; --ss:#CDBD3A; --z4:#F0B637; --z5:#F2803A; --z6:#EF5E5E; --z7:#B672DB;
+  color-scheme:dark}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.55}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:30;background:var(--surface)}
+a{color:var(--accent)}
+h1,h2,h3{font-family:var(--f-display);font-weight:700;letter-spacing:.01em;line-height:1.1;text-wrap:balance;margin:0}
+h1{font-size:2.3rem}h2{font-size:1.65rem}h3{font-size:1.25rem}
+p{margin:0}
+.wrap{max-width:920px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+header.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:20;background:var(--surface);border-bottom:1px solid var(--line)}
+.top .wrap{display:flex;align-items:center;gap:16px;padding-block:10px;flex-wrap:wrap}
+.brand{display:flex;align-items:baseline;gap:10px;min-width:0}
+.brand b{font-family:var(--f-display);font-size:1.6rem;letter-spacing:.02em;text-transform:uppercase}
+.brand svg{width:26px;height:18px;align-self:center;flex:none}
+.countdown{flex:1 1 0;font-size:.85rem;color:var(--muted);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.countdown strong{color:var(--ink);font-family:var(--f-mono);font-weight:500}
+nav.tabs{display:flex;gap:2px;margin-left:auto}
+nav.tabs a{font-weight:600;font-size:.88rem;text-decoration:none;color:var(--muted);padding:8px 12px;border-radius:8px}
+nav.tabs a[aria-current="page"]{color:var(--accent-ink);background:var(--accent)}
+nav.tabs a:hover:not([aria-current="page"]){background:var(--sunk);color:var(--ink)}
+a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+main{padding-block:22px 110px}
+.stack{display:flex;flex-direction:column;gap:18px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:20px}
+.muted{color:var(--muted)}
+.small{font-size:.86rem}
+.eyebrow{font-size:.74rem;font-weight:600;letter-spacing:.09em;text-transform:uppercase;color:var(--muted)}
+.mono{font-family:var(--f-mono);font-variant-numeric:tabular-nums}
+.btn{font:600 .9rem var(--f-body);border:1px solid var(--line);background:var(--surface);color:var(--ink);padding:9px 14px;border-radius:8px;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:8px}
+.btn:hover{background:var(--sunk)}
+.btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.btn.primary:hover{filter:brightness(1.08)}
+.btn:disabled{opacity:.5;cursor:default}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.banner{background:var(--warn-soft);color:var(--ink);border:1px solid var(--line);border-radius:var(--r);padding:12px 16px;display:flex;gap:12px;align-items:center;flex-wrap:wrap;justify-content:space-between}
+.banner b{color:var(--warn)}
+.chip{display:inline-flex;align-items:center;gap:6px;font-size:.78rem;font-weight:600;padding:3px 9px;border-radius:999px;background:var(--sunk);color:var(--ink);white-space:nowrap}
+.chip .dot{width:8px;height:8px;border-radius:50%;background:var(--zc,var(--z2))}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(84px + env(safe-area-inset-bottom,0px));background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:8px;font-size:.9rem;z-index:50;max-width:calc(100% - 32px)}
+
+/* zone color hooks */
+.zZ1{--zc:var(--z1)}.zZ2{--zc:var(--z2)}.zZ3{--zc:var(--z3)}.zSS{--zc:var(--ss)}.zZ4{--zc:var(--z4)}.zZ5{--zc:var(--z5)}.zZ6{--zc:var(--z6)}.zZ7{--zc:var(--z7)}
+.zREST{--zc:var(--line)}.zRACE{--zc:var(--ink)}.zGYM{--zc:var(--muted)}
+
+/* week strip */
+.strip{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px}
+.strip button{font:inherit;border:1px solid var(--line);background:var(--surface);border-radius:10px;padding:8px 4px 10px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:3px;color:var(--ink);min-width:0}
+.strip button[aria-pressed="true"]{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
+.strip .dn{font-size:.72rem;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.06em}
+.strip .dd{font-family:var(--f-display);font-size:1.35rem;font-weight:700;line-height:1}
+.strip .bar{width:70%;height:5px;border-radius:3px;background:var(--zc)}
+.strip .is-today .dd{color:var(--accent)}
+.strip .done .bar{opacity:.35}
+.strip .tick{font-size:.7rem;color:var(--accent);height:1em}
+
+/* day card */
+.day-head{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:flex-start}
+.day-title{font-size:2.6rem;line-height:1}
+.metrics{display:flex;gap:22px;flex-wrap:wrap;margin-top:14px}
+.metric .v{font-family:var(--f-display);font-size:1.7rem;font-weight:700;line-height:1}
+.metric .k{font-size:.72rem;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;font-weight:600}
+.profile{display:flex;align-items:flex-end;gap:2px;height:84px;margin-top:18px;padding:8px;background:var(--sunk);border-radius:8px}
+.profile i{display:block;flex-grow:var(--w);flex-basis:0;min-width:2px;height:var(--h);background:var(--zc);border-radius:2px 2px 0 0}
+.steps{width:100%;border-collapse:collapse;margin-top:12px;font-size:.9rem}
+.steps td{padding:7px 6px;border-top:1px solid var(--line);vertical-align:top}
+.steps td:first-child{width:76px;font-family:var(--f-mono);font-variant-numeric:tabular-nums;white-space:nowrap}
+.steps .sw{width:10px;padding-right:0}
+.steps .sw span{display:block;width:6px;height:18px;border-radius:2px;background:var(--zc)}
+.target{color:var(--muted);font-size:.82rem}
+.cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:18px}
+ul.tips{margin:6px 0 0;padding-left:18px;display:flex;flex-direction:column;gap:4px}
+.done-toggle{display:flex;align-items:center;gap:8px;font-weight:600;cursor:pointer}
+.done-toggle input{width:20px;height:20px;accent-color:var(--accent)}
+
+/* plan */
+.timeline{display:flex;height:34px;border-radius:8px;overflow:hidden;position:relative;margin-top:10px}
+.timeline span{display:flex;align-items:center;justify-content:center;color:#fff;font-size:.75rem;font-weight:600;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:clip}
+.ph-base{background:var(--z2)}.ph-build{background:var(--z4)}.ph-peak{background:var(--z5)}.ph-taper{background:var(--z3)}
+.timeline .now{position:absolute;top:-4px;bottom:-4px;width:3px;background:var(--ink);border-radius:2px}
+.legend{display:flex;gap:14px;flex-wrap:wrap;margin-top:8px;font-size:.8rem;color:var(--muted)}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:-1px}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px}
+.stat .v{font-family:var(--f-display);font-size:2rem;font-weight:700;line-height:1}
+.stat .k{font-size:.8rem;color:var(--muted)}
+details.week{border:1px solid var(--line);border-radius:var(--r);background:var(--surface)}
+details.week>summary{list-style:none;cursor:pointer;padding:12px 16px;display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:center}
+details.week>summary::-webkit-details-marker{display:none}
+.wk-n{font-family:var(--f-display);font-size:1.3rem;font-weight:700;width:2.4em}
+.wk-meta{min-width:0}
+.wk-meta .d{font-size:.82rem;color:var(--muted)}
+.wk-bars{display:flex;gap:3px;align-items:flex-end;height:26px}
+.wk-bars i{width:9px;border-radius:2px;background:var(--zc);height:var(--h)}
+.wk-days{padding:0 16px 12px}
+.wk-day{display:grid;grid-template-columns:92px 1fr auto;gap:10px;padding:8px 0;border-top:1px solid var(--line);align-items:baseline}
+.wk-day button{font:inherit;background:none;border:0;padding:0;color:var(--accent);cursor:pointer;text-align:left;font-weight:600}
+.wk-day .when{font-size:.84rem;color:var(--muted)}
+.wk-day.today .when{color:var(--accent);font-weight:600}
+.tblwrap{overflow-x:auto}
+table.zones{border-collapse:collapse;width:100%;font-size:.88rem;min-width:520px}
+table.zones th,table.zones td{text-align:left;padding:7px 8px;border-top:1px solid var(--line)}
+table.zones th{font-size:.74rem;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);border-top:0}
+table.zones td.mono{white-space:nowrap}
+
+/* library */
+.ex{display:grid;grid-template-columns:120px 1fr;gap:16px;align-items:start}
+.ex-fig{aspect-ratio:1;max-width:100%;border-radius:8px;background:var(--sunk);display:flex;align-items:center;justify-content:center;color:var(--muted)}
+.ex-fig svg{width:72%;height:72%}
+.ex h3{margin-bottom:2px}
+.ex dl{margin:8px 0 0;display:grid;grid-template-columns:auto 1fr;gap:4px 12px;font-size:.9rem}
+.ex dt{font-weight:600;color:var(--muted)}
+.ex dd{margin:0;min-width:0}
+details.art{border-top:1px solid var(--line);padding-block:4px}
+details.art:first-of-type{border-top:0}
+details.art>summary{cursor:pointer;padding:10px 0;font-family:var(--f-display);font-size:1.3rem;font-weight:700}
+details.art .body{padding-bottom:14px;display:flex;flex-direction:column;gap:10px;max-width:68ch}
+.filter{display:flex;gap:6px;flex-wrap:wrap}
+.filter button{font:600 .82rem var(--f-body);border:1px solid var(--line);background:var(--surface);color:var(--ink);padding:6px 12px;border-radius:999px;cursor:pointer}
+.filter button[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+ol.refs{padding-left:22px;display:flex;flex-direction:column;gap:8px;font-size:.9rem;margin:0}
+.principle{display:grid;grid-template-columns:1fr;gap:4px;padding-block:12px;border-top:1px solid var(--line)}
+.principle:first-child{border-top:0;padding-top:0}
+.principle h3{font-size:1.2rem}
+
+/* form */
+form.setup{display:flex;flex-direction:column;gap:18px}
+fieldset{border:1px solid var(--line);border-radius:var(--r);background:var(--surface);padding:18px;margin:0;min-width:0}
+legend{font-family:var(--f-display);font-size:1.3rem;font-weight:700;padding:0 6px}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,220px),1fr));gap:14px}
+label.f{display:flex;flex-direction:column;gap:5px;font-weight:600;font-size:.88rem;min-width:0}
+label.f .hint{font-weight:400;color:var(--muted);font-size:.8rem}
+input[type=text],input[type=number],input[type=date],select{font:inherit;font-weight:400;padding:9px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);width:100%;min-width:0}
+.days{display:flex;gap:6px;flex-wrap:wrap}
+.days label{display:flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:8px;padding:7px 10px;cursor:pointer;font-weight:600;font-size:.88rem;background:var(--bg)}
+.days input{accent-color:var(--accent)}
+.err{color:var(--z6);font-weight:600}
+
+@media (max-width:720px){
+  nav.tabs{position:fixed;left:0;right:0;bottom:0;margin:0;background:var(--surface);border-top:1px solid var(--line);
+    padding:6px max(8px,env(safe-area-inset-right,0px)) calc(6px + env(safe-area-inset-bottom,0px)) max(8px,env(safe-area-inset-left,0px));justify-content:space-around;z-index:40}
+  nav.tabs a{padding:8px 6px;font-size:.78rem;flex:1;text-align:center}
+  .day-title{font-size:2.1rem}
+  h1{font-size:1.9rem}
+  .ex{grid-template-columns:72px 1fr;gap:12px}
+  .wk-day{grid-template-columns:70px 1fr auto}
+  .card{padding:16px}
+}
+@media (prefers-reduced-motion:no-preference){.btn,.strip button,nav.tabs a{transition:background .15s,box-shadow .15s}}
+@media print{header.top,nav.tabs{display:none}}
+</style>
+
+<header class="top">
+  <div class="wrap">
+    <div class="brand">
+      <svg viewBox="0 0 26 18" aria-hidden="true"><path d="M1 16 L8 6 L12 11 L18 2 L25 16" fill="none" stroke="var(--accent)" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round"/></svg>
+      <b>Switchback</b>
+    </div>
+    <div class="countdown" id="countdown"></div>
+    <nav class="tabs" id="tabs" aria-label="Sections">
+      <a href="#today" data-v="today">Today</a>
+      <a href="#plan" data-v="plan">Plan</a>
+      <a href="#strength" data-v="strength">Gym</a>
+      <a href="#technique" data-v="technique">Skills</a>
+      <a href="#science" data-v="science">Science</a>
+      <a href="#setup" data-v="setup">Setup</a>
+    </nav>
+  </div>
+</header>
+<main class="wrap" id="app"></main>
+
+<script>
+/* ============ utilities ============ */
+const DAYN=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+const DAYL=['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
+const MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const pad=n=>String(n).padStart(2,'0');
+const dkey=d=>`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+const parse=s=>{const [y,m,d]=String(s).split('-').map(Number);return new Date(y,(m||1)-1,d||1)};
+const addDays=(d,n)=>new Date(d.getFullYear(),d.getMonth(),d.getDate()+n);
+const di=d=>(d.getDay()+6)%7;
+const monday=d=>addDays(d,-di(d));
+const fmtD=d=>`${DAYN[di(d)]}, ${MON[d.getMonth()]} ${d.getDate()}`;
+const fmtShort=d=>`${MON[d.getMonth()]} ${d.getDate()}`;
+const clamp=(x,a,b)=>Math.max(a,Math.min(b,x));
+const r25=x=>Math.round(x*4)/4;
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+function fmtH(h){const m=Math.round(h*60);const H=Math.floor(m/60),M=m%60;return H?(M?`${H}h${pad(M)}`:`${H}h`):`${M} min`}
+function fmtMin(min){if(min<1)return `${Math.round(min*60)} s`;if(min>=60)return fmtH(min/60);return `${Math.round(min*10)/10} min`}
+const today=()=>{const n=new Date();return new Date(n.getFullYear(),n.getMonth(),n.getDate())};
+
+/* ============ zones ============ */
+const ZONES=[
+ {k:'Z1',name:'Recovery',p:[0,55],h:[0,81],m:[50,60],rpe:'1–2',talk:'Easy chatting',i:1},
+ {k:'Z2',name:'Endurance',p:[56,75],h:[81,89],m:[60,72],rpe:'3–4',talk:'Full sentences',i:2},
+ {k:'Z3',name:'Tempo',p:[76,87],h:[90,93],m:[72,82],rpe:'5–6',talk:'Short sentences',i:3},
+ {k:'SS',name:'Sweet spot',p:[88,93],h:[93,96],m:[82,87],rpe:'6–7',talk:'A few words at a time',i:3.6},
+ {k:'Z4',name:'Threshold',p:[94,105],h:[96,100],m:[87,92],rpe:'7–8',talk:'One or two words',i:4.3},
+ {k:'Z5',name:'VO₂max',p:[106,120],h:[100,106],m:[92,100],rpe:'8–9',talk:'Can’t talk',i:5.3},
+ {k:'Z6',name:'Anaerobic',p:[121,150],h:null,m:null,rpe:'9–10',talk:'All-out for 30 s–2 min',i:6.3},
+ {k:'Z7',name:'Sprint',p:[151,null],h:null,m:null,rpe:'10',talk:'Maximal, under 20 s',i:7.2},
+];
+const Z=k=>ZONES.find(z=>z.k===k)||ZONES[1];
+function hrMax(p){if(+p.maxhr)return {v:+p.maxhr,est:false};if(+p.age)return {v:Math.round(208-0.7*p.age),est:true};return null}
+function zoneTargets(k,p){
+  const z=Z(k),o={};
+  const ftp=+p.ftp,lt=+p.lthr,mh=hrMax(p);
+  if(ftp){o.power=z.p[1]==null?`${Math.round(ftp*z.p[0]/100)}+ W`:z.p[0]===0?`under ${Math.round(ftp*.55)} W`:`${Math.round(ftp*z.p[0]/100)}–${Math.round(ftp*z.p[1]/100)} W`}
+  if(lt&&z.h){o.hr=z.h[0]===0?`under ${Math.round(lt*.81)} bpm`:`${Math.round(lt*z.h[0]/100)}–${Math.round(lt*z.h[1]/100)} bpm`}
+  else if(mh&&z.m){o.hr=`${Math.round(mh.v*z.m[0]/100)}–${Math.round(mh.v*z.m[1]/100)} bpm`+(mh.est?' (est.)':'')}
+  else if(z.h||z.m){}else o.hr='HR lags; ride by feel';
+  o.rpe=`RPE ${z.rpe}`;
+  return o;
+}
+const targetParts=(k,p)=>{const t=zoneTargets(k,p);return [t.power,t.hr,t.rpe].filter(Boolean)};
+const targetStr=(k,p)=>{const t=zoneTargets(k,p);return [t.power,t.hr,t.rpe].filter(Boolean).join(' · ')};
+
+/* ============ workout catalog ============ */
+const RIDE={
+ endurance:{title:'Endurance ride',zone:'Z2',purpose:'Builds the aerobic engine: more capillaries, more mitochondria, better fat burning. Most of your riding should feel like this.',tips:['Keep it truly easy. If you can’t speak in full sentences, ease off.','Pedal at a smooth 80–95 rpm.','Practice drinking: about one bottle per hour.']},
+ recovery:{title:'Recovery spin',zone:'Z1',purpose:'Moves blood through tired legs without adding fatigue. If you feel run down, take the day off instead.',tips:['Flat route, light gear, quick cadence.','Easier than you think. This ride only works if it stays easy.']},
+ long:{title:'Long ride',zone:'Z2',purpose:'The most important session for endurance events. It extends how long you can ride steadily and trains your gut to take in fuel.',tips:['Start eating within 30 minutes and keep eating every 20–30 minutes.','Ride terrain like your event when you can.','Write down what food and drink worked. That becomes your race-day plan.']},
+ b2b:{title:'Back-to-back day',zone:'Z2',purpose:'A second solid day on tired legs. It mimics the late hours of a long event without one enormous ride.',tips:['Steady and easy. The goal is time on tired legs, not speed.','Fuel exactly as you did on the long ride.']},
+ skills:{title:'Endurance + skills',zone:'Z2',purpose:'Easy aerobic riding plus bike handling practice. Good skills save more energy on technical courses than a few extra watts.',tips:['Pick a grassy field, park or easy trail.','Drills: slow-speed balance, tight turns both directions, braking hard in a straight line, looking far ahead through corners, riding over small obstacles.','See the Skills tab for how to do each drill.']},
+ tempo:{title:'Tempo intervals',zone:'Z3',purpose:'Raises the effort you can hold for hours. “Comfortably hard” and controlled.',tips:['Stay seated and smooth.','Practice drinking during the efforts.']},
+ sweetspot:{title:'Sweet spot intervals',zone:'SS',purpose:'Just under threshold. A time-efficient way to raise the power you can sustain.',tips:['Hard but repeatable. Finish the last interval at the same effort as the first.']},
+ threshold:{title:'Threshold intervals',zone:'Z4',purpose:'Raises your FTP, roughly the highest effort you can hold for an hour.',tips:['Settle into the target over the first minute; don’t start too hot.','On the road, choose a route with few stops, or use a trainer.']},
+ vo2:{title:'VO₂max intervals',zone:'Z5',purpose:'Raises your aerobic ceiling. Short, hard efforts give a large return for little time.',tips:['Hard but controlled. Don’t sprint the first 20 seconds.','If you can’t reach the target on a rep, end the set there.']},
+ climbs:{title:'Climbing repeats',zone:'Z4',purpose:'Threshold work on real climbs. Builds climbing strength and teaches you to pace a hill.',tips:['Alternate 2–3 minutes seated and 30–60 seconds standing.','On a trainer, raise the front wheel a few inches to mimic the climbing position.']},
+ anaerobic:{title:'Anaerobic efforts',zone:'Z6',purpose:'Builds the punch to close gaps, attack and recover repeatedly. Key for short, surging races.',tips:['Go hard from the start of each effort.','Take the full rest; these need fresh legs.']},
+ sprints:{title:'Endurance + sprints',zone:'Z2',purpose:'An aerobic ride with a few short, maximal sprints. Keeps top-end power and leg speed without much fatigue.',tips:['Full recovery between sprints. Quality over quantity.','Do half seated and half standing.']},
+ racepace:{title:'Race-pace intervals',zone:'Z3',purpose:'Long efforts at the intensity you plan to race. Teaches pacing so race effort feels familiar.',tips:['Use your race bike, tires and bottles.','Practice eating while working.']},
+ racesim:{title:'Race simulation',zone:'Z2',purpose:'A dress rehearsal: race bike, race tires, race food and drink, and your race start time if possible.',tips:['Eat and drink exactly what you plan to on race day.','Start easier than you want to. Pacing is practiced, not guessed.','Rehearse anything you will do in the race: refilling bottles, clothing changes.']},
+ taperSharp:{title:'Short and sharp',zone:'Z5',purpose:'Keeps your legs sharp while total training drops before the event.',tips:['Fewer, shorter efforts. You should finish feeling fresh.']},
+ openers:{title:'Openers',zone:'Z2',purpose:'Wakes your legs up the day before the event.',tips:['Keep it short.','Check the bike, pack your bag, eat well, go to bed early.']},
+};
+
+/* ============ strength library ============ */
+const EX={
+ squat:{vq:'goblet squat',name:'Squat',pattern:'squat',gym:'Back squat or goblet squat',home:'Goblet squat holding a dumbbell, kettlebell or loaded backpack',why:'Builds the quads and glutes that drive the pedal stroke. Heavy squats are linked to better cycling economy.',cues:['Feet about shoulder width, toes slightly out.','Sit down between your heels; keep your chest proud.','Knees track over the toes; drive up through the whole foot.'],mistakes:['Heels lifting off the floor.','Knees caving inward on the way up.']},
+ rdl:{vq:'romanian deadlift',name:'Romanian deadlift',pattern:'hinge',gym:'Barbell or dumbbell Romanian deadlift',home:'Dumbbell or backpack Romanian deadlift',why:'Strengthens hamstrings, glutes and lower back for a strong hip hinge and a back that tolerates long hours bent over the bike.',cues:['Soft knees; push the hips back like closing a car door with your rear.','Keep the weight close to the legs.','Stop when the hamstrings are tight and the back is still flat.'],mistakes:['Rounding the lower back.','Turning it into a squat by bending the knees too much.']},
+ split:{vq:'bulgarian split squat',name:'Bulgarian split squat',pattern:'single-leg',gym:'Dumbbell Bulgarian split squat, rear foot on a bench',home:'Bodyweight or dumbbell split squat, rear foot on a couch or chair',why:'Trains one leg at a time, like pedaling. Fixes left–right imbalances and builds hip stability.',cues:['Front foot far enough forward that the knee stays roughly over the ankle.','Drop the back knee straight down.','Push through the front heel.'],mistakes:['Leaning far forward.','Front knee collapsing inward.']},
+ stepup:{vq:'step up exercise',name:'Step-up',pattern:'single-leg',gym:'Dumbbell step-up onto a box at knee height',home:'Step-up onto a sturdy step or bench',why:'A joint-friendly single-leg strength move that closely matches the pushing phase of the pedal stroke.',cues:['Whole foot on the box.','Drive through the top leg; don’t push off the bottom foot.','Lower slowly.'],mistakes:['Bouncing off the back foot.','Using a box so high the hips sag.']},
+ hipthrust:{vq:'glute bridge hip thrust',name:'Hip thrust',pattern:'hinge',gym:'Barbell hip thrust, upper back on a bench',home:'Single-leg glute bridge on the floor',why:'Strong glutes take load off the quads and lower back on long climbs.',cues:['Chin tucked, ribs down.','Drive the hips up until the body is straight from knees to shoulders.','Squeeze for a second at the top.'],mistakes:['Arching the lower back at the top.','Pushing through the toes instead of the heels.']},
+ calf:{vq:'calf raise',name:'Calf raise',pattern:'lower-leg',gym:'Standing or seated calf raise',home:'Single-leg calf raise on a step',why:'Strengthens the calves and Achilles tendon, which take a beating when hiking the bike or running steep sections.',cues:['Full range: heel below the step, then all the way up.','Pause at the top; lower slowly.'],mistakes:['Bouncing quickly through half the range.']},
+ pushup:{vq:'push up',name:'Push-up',pattern:'push',gym:'Push-up (hands on a bench to make it easier)',home:'Push-up (hands on a counter or wall to make it easier)',why:'Upper-body strength helps you control the bike on rough ground and protects the shoulders in a crash.',cues:['Hands under the shoulders; body in one straight line.','Lower the chest to just above the floor.','Elbows about 45° from the body.'],mistakes:['Hips sagging.','Flaring the elbows straight out.']},
+ row:{vq:'dumbbell row',name:'One-arm row',pattern:'pull',gym:'One-arm dumbbell row, hand and knee on a bench',home:'Backpack or resistance-band row',why:'Balances all the pushing posture of cycling and builds a stable upper back for long hours in the saddle.',cues:['Flat back, neck long.','Pull the elbow back toward the hip.','Squeeze the shoulder blade, then lower slowly.'],mistakes:['Twisting the torso to heave the weight.','Shrugging the shoulder up.']},
+ pulldown:{vq:'pull up strength',name:'Lat pulldown',pattern:'pull',gym:'Lat pulldown or assisted pull-up',home:'Band pulldown anchored over a door',why:'Pulling strength supports climbing out of the saddle and steering on technical terrain.',cues:['Lean back slightly; chest up.','Pull the bar to the upper chest, elbows down and back.','Control the return.'],mistakes:['Pulling behind the neck.','Swinging the body to move the weight.']},
+ plank:{vq:'plank core',name:'Front plank',pattern:'core',core:true,gym:'Front plank on forearms',home:'Front plank on forearms',why:'Trains the trunk to resist sagging, which keeps you stable and efficient late in long rides.',cues:['Elbows under the shoulders.','Squeeze the glutes and brace like bracing for a poke in the belly.','Breathe steadily.'],mistakes:['Hips high or sagging.','Holding the breath.']},
+ sideplank:{vq:'side plank',name:'Side plank',pattern:'core',core:true,gym:'Side plank on forearm',home:'Side plank on forearm (knees down to make it easier)',why:'Builds the side-trunk strength that stops the hips rocking on the saddle.',cues:['Elbow under the shoulder.','Hips up in a straight line from head to feet.'],mistakes:['Hips drooping toward the floor.','Rolling the chest forward.']},
+ deadbug:{vq:'dead bug core',name:'Dead bug',pattern:'core',core:true,gym:'Dead bug',home:'Dead bug',why:'Teaches you to keep the trunk still while the arms and legs move, exactly what pedaling asks for.',cues:['Lower back gently pressed into the floor.','Slowly extend the opposite arm and leg; return and switch.','Exhale as you extend.'],mistakes:['Lower back arching off the floor.','Moving fast.']},
+ pallof:{vq:'core stability exercises',name:'Pallof press',pattern:'core',core:true,gym:'Cable Pallof press',home:'Band Pallof press anchored to a door or post',why:'Anti-rotation strength for steadiness when sprinting, climbing out of the saddle and on rough trail.',cues:['Stand side-on to the anchor, feet hip width.','Press the handle straight out from the chest and hold 2 seconds.','Don’t let the torso twist.'],mistakes:['Leaning away from the anchor.','Letting the arms drift toward the anchor.']},
+ jump:{vq:'plyometric jump',name:'Box jump',pattern:'power',gym:'Box jump onto a low box, step down',home:'Squat jump, landing softly',why:'Turns strength into power. A few explosive reps keep the gains as racing approaches.',cues:['Quick dip, swing the arms, jump.','Land softly with knees over toes.','Step down; don’t jump down.'],mistakes:['Using a box so high you have to tuck to land.','Landing stiff-legged.']},
+};
+const YT={gcn:{name:'GCN',url:'https://www.youtube.com/@gcn'},gtn:{name:'GTN',url:'https://www.youtube.com/@gtn'}};
+const ytLinks=(q,cls='btn')=>Object.values(YT).map(c=>`<a class="${cls}" href="${c.url}/search?query=${encodeURIComponent(q)}" target="_blank" rel="noopener">Watch on ${c.name} ↗</a>`).join(' ');
+const FEATURED={
+ strength:[
+  {t:'7 key strength exercises for cyclists',src:'GCN',u:'https://content.globalcyclingnetwork.com/how-to/training/7-key-strength-exercises-for-cyclists'},
+  {t:'6 beginner strength training exercises for cyclists',src:'GCN',u:'https://www.globalcyclingnetwork.com/video/6-beginner-strength-training-exercises-for-cyclists'},
+  {t:'Avoid the gym: 7 outdoor strength exercises for cyclists',src:'GCN',u:'https://www.globalcyclingnetwork.com/how-to/training/avoid-the-gym-7-outdoor-strength-training-exercises-for-cyclists'},
+  {t:'8 exercises for strength and power',src:'GTN',u:'https://globaltrinetwork.com/video/8-exercises-for-strength-power-get-stronger-in-2023'},
+  {t:'Will strength training make me a better athlete?',src:'GTN',u:'https://globaltrinetwork.com/video/will-strength-training-make-me-a-better-athlete-gtn-coachs-corner'},
+ ],
+ fit:[
+  {t:'How to find the right saddle height on your road bike',src:'GCN',u:'https://www.globalcyclingnetwork.com/video/how-to-find-the-right-saddle-height-on-your-road-bike'},
+  {t:'The 5 most common bike fit mistakes',src:'GCN',u:'https://content.globalcyclingnetwork.com/video/the-5-most-common-bike-fit-mistakes-2024'},
+ ],
+};
+const featList=list=>`<ul class="tips">${list.map(f=>`<li><a href="${f.u}" target="_blank" rel="noopener">${esc(f.t)} ↗</a> <span class="small muted">${f.src}</span></li>`).join('')}</ul>`;
+const MOBILITY=[
+ {name:'Half-kneeling hip flexor stretch',how:'Kneel on one knee, tuck the pelvis under, shift forward gently. 45 s each side.',why:'Opens the hips that stay closed in the riding position.'},
+ {name:'Open book',how:'Lie on your side, knees bent. Rotate the top arm open toward the floor behind you. 8 slow reps each side.',why:'Restores upper-back rotation lost to long hours bent forward.'},
+ {name:'90/90 hip switch',how:'Sit with both knees bent at 90°, then rotate the knees side to side. 8 each way.',why:'Keeps the hips mobile in rotation, which cycling never trains.'},
+ {name:'Figure-4 glute stretch',how:'On your back, ankle over the opposite knee; pull the bottom leg toward you. 45 s each side.',why:'Eases tight glutes and outer hips after long rides.'},
+ {name:'Calf stretch',how:'Hands on a wall, one leg back with the heel down. 45 s each side, knee straight then bent.',why:'Loosens calves that stay working for hours.'},
+];
+const SPRESC={
+ AA:{name:'Foundation',sets:'2–3 sets × 12–15 reps',effort:'Moderate weight; stop with 3–4 reps left in the tank',rest:'60–90 s',note:'Learn each movement and build tendon tolerance before going heavy.'},
+ MS:{name:'Max strength',sets:'3–4 sets × 4–6 reps',effort:'Heavy; stop with 1–2 good reps left',rest:'2–3 min',note:'The heavy phase. Studies showing benefits for cyclists used loads in this range. At home, use 3 × 8–12 slow reps with the hardest variation you can control. New to lifting? Use 3 × 6–8 and add weight gradually.'},
+ MAINT:{name:'Maintenance',sets:'2–3 sets × 4–6 reps',effort:'Heavy but short; stop with 2 reps left',rest:'2–3 min',note:'One heavy session a week holds most of your strength gains while riding takes priority.'},
+ LIGHT:{name:'Light',sets:'2 sets × 8–10 reps',effort:'Easy; 4+ reps left',rest:'60–90 s',note:'Recovery-week version. Move well, don’t chase fatigue.'},
+};
+const SESS={A:['squat','rdl','pushup','deadbug','sideplank'],B:['split','hipthrust','row','pulldown','pallof','calf'],MAINT:['squat','split','jump','row','plank']};
+const coreReps=k=>({plank:'3 × 30–45 s',sideplank:'2–3 × 20–40 s each side',deadbug:'2–3 × 8 each side',pallof:'2–3 × 10 each side'}[k]);
+
+const FIG={
+ squat:'<path d="M50 14a7 7 0 1 1 0 .1M50 24v22l-14 10 6 22M50 46l14 10-6 22M36 34h28"/>',
+ hinge:'<path d="M70 26a7 7 0 1 1 0 .1M64 30 38 46l-2 30M38 46l10 30M50 40v22"/>',
+ 'single-leg':'<path d="M50 12a7 7 0 1 1 0 .1M50 22v26l-12 4 2 24M50 48l18 10 6 18"/>',
+ 'lower-leg':'<path d="M50 12a7 7 0 1 1 0 .1M50 22v34l-6 22M50 56l6 22M30 84h40"/>',
+ push:'<path d="M22 52a7 7 0 1 1 0 .1M28 54l52 10M34 56v18M78 64v12"/>',
+ pull:'<path d="M50 20a7 7 0 1 1 0 .1M50 30v28l-8 22M50 58l8 22M50 36 34 18M50 36l16-18M28 14h44"/>',
+ core:'<path d="M20 58a7 7 0 1 1 0 .1M27 60h50M34 60v14M74 60l4 14"/>',
+ power:'<path d="M50 10a7 7 0 1 1 0 .1M50 20v24l-12 14M50 44l12 14M50 28 36 18M50 28l14-10M24 84h52M40 72v12h20V72"/>',
+};
+
+/* ============ example profile ============ */
+function exampleProfile(){
+  const t=today();
+  return {name:'Example rider',age:55,experience:'some',ftp:165,lthr:148,maxhr:'',currentHours:5,maxHours:10,longest:3,
+    days:[false,true,true,true,false,true,true],longDay:5,strength:'gym',startDate:dkey(monday(t)),
+    event:{name:'100-mile mountain bike race at altitude',type:'mtb',date:dkey(addDays(monday(t),7*38+5)),durationH:11,elevationFt:10000,goal:'finish'}};
+}
+
+/* ============ plan generator ============ */
+function eventFamily(ev){const d=+ev.durationH||3;return d>=4?'ultra':d>=1.5?'endurance':'short'}
+function keySessions(phase,prog,ev,fam){
+  const t=ev.type;
+  if(phase==='base')return prog<0.4?['tempo','sprints']:['sweetspot','sprints'];
+  if(phase==='build'){
+    if(t==='tt')return ['threshold','vo2'];
+    if(t==='climb')return ['climbs','vo2'];
+    if(t==='crit'||fam==='short')return ['vo2','anaerobic'];
+    if(t==='mtb')return ['climbs','vo2'];
+    if(fam==='ultra')return ['threshold','vo2'];
+    return ['vo2','threshold'];
+  }
+  if(phase==='peak'){
+    if(t==='crit'||fam==='short')return ['anaerobic','vo2'];
+    if(t==='climb')return ['climbs','vo2'];
+    if(t==='tt')return ['racepace','vo2'];
+    return fam==='ultra'?['vo2','racepace']:['racepace','vo2'];
+  }
+  return ['taperSharp'];
+}
+function generatePlan(p){
+  const ev=p.event||{};
+  if(!ev.date)return {error:'Add your event date in Setup.'};
+  const eventDate=parse(ev.date);
+  let start=monday(parse(p.startDate||dkey(today())));
+  const evMon=monday(eventDate);
+  let N=Math.round((evMon-start)/(7*864e5))+1;
+  if(N<1)return {error:'Your event date is before the plan start date. Check both dates in Setup.'};
+  const notes=[];
+  if(N>52){start=addDays(evMon,-51*7);N=52;notes.push(`Your event is more than a year away, so the plan starts ${fmtShort(start)}. Until then, ride for fun and keep lifting.`)}
+  const dur=+ev.durationH||3, fam=eventFamily(ev);
+  const age=+p.age||40;
+  const taperW=N>=6?(dur>=4?2:1):1;
+  const R=N-taperW;
+  const peakW=R>=16?3:R>=8?2:R>=4?1:0;
+  const buildW=R>=6?Math.round((R-peakW)*0.4):Math.max(0,R-peakW-1);
+  const baseW=Math.max(0,R-peakW-buildW);
+  const k=(age>=50||p.experience==='new')?3:4;
+  const maxH=Math.max(2,+p.maxHours||6);
+  const h0=Math.min(maxH,Math.max(2,+p.currentHours||3));
+  const longMax=fam==='ultra'?Math.min(dur*0.75,6.5):fam==='endurance'?Math.min(Math.max(dur*1.1,2.5),5):Math.min(Math.max(dur*2,2),3.5);
+  const longStart=clamp(+p.longest||1.5,1,longMax);
+  const longShare=fam==='ultra'?0.55:0.42;
+  const phases=[['base',0,baseW],['build',baseW,buildW],['peak',baseW+buildW,peakW],['taper',R,taperW]];
+  const weeks=[];let lastLoad=h0,lastLong=longStart,strCount=0,maxLongHit=0;
+  for(let i=0;i<N;i++){
+    const ph=phases.find(([,s,l])=>i>=s&&i<s+l);
+    const phase=ph[0],prog=ph[2]>1?(i-ph[1])/(ph[2]-1):1;
+    const isRace=i===N-1;
+    const recovery=phase!=='taper'&&i>0&&(i+1)%k===0&&i!==R-1;
+    let hours,long;
+    if(phase==='taper'){
+      hours=isRace?lastLoad*0.45:lastLoad*0.65;
+      long=isRace?0:Math.min(longMax*0.55,lastLong*0.6,3);
+    }else if(recovery){
+      hours=lastLoad*0.6;long=Math.max(1,lastLong*0.6);
+    }else{
+      const ramp=baseW+buildW>1?Math.min(1,i/(baseW+buildW-1)):1;
+      const target=phase==='peak'?maxH*0.95:h0+(maxH-h0)*ramp;
+      hours=Math.min(target,lastLoad*1.12+0.25);hours=Math.max(hours,Math.min(h0,maxH));
+      lastLoad=hours;
+      const lp=R>1?Math.min(1,i/(R-1)):1;
+      long=Math.min(longStart+(longMax-longStart)*lp,hours*longShare,lastLong*1.15+0.25);
+      long=Math.max(1,long);lastLong=long;maxLongHit=Math.max(maxLongHit,long);
+    }
+    const wk={i,phase,prog,recovery,isRace,hours,long,start:addDays(start,i*7),fam,taperIdx:phase==='taper'?i-R:-1};
+    wk.days=isRace?raceWeek(p,wk,eventDate):buildWeek(p,wk,()=>strCount++);
+    wk.total=wk.days.reduce((s,d)=>s+d.items.filter(x=>x.kind==='ride').reduce((a,x)=>a+x.hours,0),0);
+    weeks.push(wk);
+  }
+  if(fam==='ultra'&&maxLongHit<dur*0.55&&maxLongHit<5)notes.push(`Your longest planned ride reaches about ${fmtH(maxLongHit)}. For a ${fmtH(dur)} event, more weekly hours would let long rides build further. Add hours in Setup if you can.`);
+  return {weeks,start,eventDate,N,fam,notes,phases:{base:baseW,build:buildW,peak:peakW,taper:taperW},k};
+}
+function buildWeek(p,wk,nextStr){
+  const ev=p.event,fam=wk.fam;
+  let D=p.days.map((v,i)=>v?i:-1).filter(i=>i>=0);
+  if(!D.length)D=[1,3,5];
+  const days=Array.from({length:7},(_,i)=>({date:addDays(wk.start,i),items:[]}));
+  const longDay=D.includes(+p.longDay)?+p.longDay:D[D.length-1];
+  const cd=(a,b)=>{const x=Math.abs(a-b);return Math.min(x,7-x)};
+  let nHard=wk.recovery?0:wk.phase==='taper'?1:D.length>=4?2:1;
+  if(wk.phase==='base'&&D.length<4)nHard=1;
+  const keys=wk.recovery?[]:keySessions(wk.phase,wk.prog,ev,fam).slice(0,nHard);
+  const others=D.filter(d=>d!==longDay);
+  const hardDays=[];
+  for(const key of keys){
+    let best=null,bs=-1;
+    for(const d of others){
+      if(hardDays.some(h=>h.d===d))continue;
+      let s=Math.min(cd(d,longDay),...hardDays.map(h=>cd(d,h.d)),9);
+      if(d===(longDay+1)%7)s-=0.6;
+      if(s>bs){bs=s;best=d}
+    }
+    if(best!=null)hardDays.push({d:best,type:key});
+  }
+  const rem=others.filter(d=>!hardDays.some(h=>h.d===d));
+  const after=(longDay+1)%7;
+  const b2b=!wk.recovery&&wk.phase!=='taper'&&(fam==='ultra'||ev.type==='stage')&&(wk.phase==='peak'||(wk.phase==='build'&&wk.prog>0.45))&&rem.includes(after);
+  const recDay=!b2b&&D.length>=5&&rem.includes(after)?after:null;
+  const endDays=rem.filter(d=>d!==after||(!b2b&&recDay==null));
+  let skillsDay=null;
+  if((ev.type==='mtb'||ev.type==='gravel')&&!wk.recovery&&(wk.phase==='base'||wk.phase==='build')&&endDays.length)skillsDay=endDays[0];
+  const hd=r25(clamp(wk.hours*0.15,0.75,1.5));
+  const longType=wk.phase==='peak'&&!wk.recovery&&fam!=='short'?'racesim':'long';
+  const ctx={phase:wk.phase,prog:wk.prog,fam,ev};
+  const put=(d,type,h)=>days[d].items.push(makeRide(type,r25(h),ctx));
+  put(longDay,longType,wk.long);
+  hardDays.forEach(h=>put(h.d,h.type,h.type==='racepace'?hd*1.25:hd));
+  let used=wk.long+hardDays.reduce((a,h)=>a+(h.type==='racepace'?hd*1.25:hd),0);
+  let b2bOn=b2b;
+  if(b2b){const bh=Math.min(wk.long*0.55,wk.hours-used-0.75*endDays.length);if(bh>=1.25){put(after,'b2b',bh);used+=bh}else{b2bOn=false;put(after,'endurance',Math.max(0.75,Math.min(1.5,wk.hours-used-0.75*endDays.length)));used+=0.75}}
+  if(recDay!=null){put(recDay,'recovery',0.75);used+=0.75}
+  if(endDays.length){
+    const each=clamp((wk.hours-used)/endDays.length,0.75,wk.phase==='taper'?1.25:2.5);
+    endDays.forEach(d=>put(d,d===skillsDay?'skills':'endurance',each));
+  }
+  // strength
+  if(p.strength!=='none'){
+    let nS=wk.phase==='base'?2:wk.phase==='build'?(D.length>=5&&wk.prog<0.5?2:1):wk.phase==='peak'?1:0;
+    if(wk.recovery)nS=1;
+    const keyDays=new Set([longDay,...hardDays.map(h=>h.d),...(b2bOn?[after]:[])]);
+    const sc=d=>{
+      if(d===longDay||(b2bOn&&d===after))return -1;
+      const nextKey=keyDays.has((d+1)%7);
+      const it=days[d].items[0];
+      if(!it)return nextKey?1:2.5;
+      if(hardDays.some(h=>h.d===d))return nextKey?1:2;
+      return nextKey?1.5:3;
+    };
+    const cand=[0,1,2,3,4,5,6].map(d=>({d,s:sc(d)})).filter(x=>x.s>0).sort((a,b)=>b.s-a.s||a.d-b.d);
+    const chosen=[];
+    for(const gap of [2,1])for(const c of cand){if(chosen.length>=nS)break;if(chosen.includes(c.d))continue;if(chosen.every(x=>cd(x,c.d)>=gap))chosen.push(c.d)}
+    const stage=wk.recovery?'LIGHT':wk.phase==='base'?(wk.i<3?'AA':'MS'):'MAINT';
+    chosen.sort((a,b)=>a-b).forEach(d=>{
+      const n=nextStr();
+      const which=stage==='MAINT'?'MAINT':(n%2===0?'A':'B');
+      days[d].items.push({kind:'strength',stage,which,title:`Strength ${which==='MAINT'?'maintenance':which}`,minutes:stage==='LIGHT'?30:stage==='MAINT'?35:45});
+    });
+  }
+  days.forEach(d=>{if(!d.items.length)d.items.push({kind:'rest',title:'Rest day'})});
+  return days;
+}
+function raceWeek(p,wk,eventDate){
+  const days=Array.from({length:7},(_,i)=>({date:addDays(wk.start,i),items:[]}));
+  const e=di(eventDate);const ctx={phase:'taper',prog:1,fam:wk.fam,ev:p.event};
+  const D=p.days;let sharpDone=false;
+  for(let d=0;d<7;d++){
+    const gap=e-d;
+    if(gap===0)days[d].items.push({kind:'race',title:p.event.name||'Event day',hours:+p.event.durationH||3});
+    else if(gap<0)days[d].items.push({kind:'rest',title:'Recovery',note:'Rest, walk, or spin very easily. Eat well and celebrate.'});
+    else if(gap===1)days[d].items.push(makeRide('openers',0.75,ctx));
+    else if(gap===2)days[d].items.push({kind:'rest',title:'Rest day',note:'Full rest. Travel, prep the bike, hydrate.'});
+    else if(D[d]){
+      if(!sharpDone&&gap<=4){days[d].items.push(makeRide('taperSharp',1,ctx));sharpDone=true}
+      else days[d].items.push(makeRide('endurance',gap>=5?1:0.75,ctx));
+    }else days[d].items.push({kind:'rest',title:'Rest day'});
+  }
+  return days;
+}
+function makeRide(type,hours,ctx){
+  const def=RIDE[type];
+  const st=buildSteps(type,hours,ctx);
+  return {kind:'ride',type,title:def.title,zone:def.zone,purpose:def.purpose,tips:def.tips,steps:st.steps,hours:st.total/60,ctx};
+}
+function buildSteps(type,hours,ctx){
+  const T=Math.round(hours*60);const S=[];
+  const add=(min,z,label)=>S.push({min,z,label});
+  const reps=(n,on,z,off,label)=>{for(let i=0;i<n;i++){add(on,z,label||`${Z(z).name}`);if(i<n-1&&off)add(off,'Z1','Easy spin')}};
+  const pr=ctx.prog||0;
+  const structured=(mainFn)=>{
+    add(15,'Z2','Warm up, building gradually');
+    const before=S.length;mainFn();
+    const mainMin=S.slice(before).reduce((a,s)=>a+s.min,0);
+    const fill=T-15-10-mainMin;
+    if(fill>=5)add(fill,'Z2','Steady endurance');
+    add(10,'Z1','Cool down');
+  };
+  switch(type){
+    case 'recovery':add(T,'Z1','Very easy spin');break;
+    case 'endurance':case 'b2b':add(T,'Z2','Steady endurance');break;
+    case 'skills':{const dr=Math.min(30,Math.max(10,T-25));add(15,'Z2','Easy warm up');add(dr,'Z1','Skills drills (see tips)');if(T-15-dr>=5)add(T-15-dr,'Z2','Steady endurance');break;}
+    case 'long':{
+      if(ctx.phase==='build'&&ctx.fam!=='short'&&T>=150){
+        const n=pr>0.5?3:2;const blocks=n*20+(n-1)*10;const lead=Math.round((T-blocks)*0.55);
+        add(lead,'Z2','Steady endurance');reps(n,20,'Z3',10,'Tempo block');add(T-lead-blocks,'Z2','Steady endurance, keep eating');
+      }else add(T,'Z2','Steady endurance, eat every 20–30 min');
+      break;}
+    case 'racesim':{
+      const n=T>=240?3:2;const blocks=n*20;const gap=Math.round((T-blocks)/(n+1));
+      for(let i=0;i<n;i++){add(gap,'Z2',i===0?'Race start: settle in, start eating':'Endurance, keep fueling');add(20,'Z3','Race-pace climb or effort')}
+      add(T-blocks-gap*n,'Z2','Finish steady; note how you feel');break;}
+    case 'tempo':structured(()=>reps(2,15+Math.round(10*pr),'Z3',5));break;
+    case 'sweetspot':structured(()=>reps(3,10+Math.round(10*pr),'SS',5));break;
+    case 'threshold':structured(()=>{if(pr<0.34)reps(4,8,'Z4',4);else if(pr<0.67)reps(3,12,'Z4',5);else reps(2,20,'Z4',8)});break;
+    case 'vo2':structured(()=>{
+      if(pr<0.34)reps(5,3,'Z5',3);
+      else if(pr<0.67){for(let s=0;s<3;s++){add(7.5,'Z5','10 × (30 s hard / 15 s easy)');if(s<2)add(3,'Z1','Easy spin')}}
+      else reps(5,4,'Z5',4);
+    });break;
+    case 'climbs':structured(()=>reps(pr<0.5?4:5,pr<0.5?6:8,'Z4',4,'Climb: seated, stand 30–60 s every few minutes'));break;
+    case 'anaerobic':structured(()=>reps(6+Math.round(2*pr),1,'Z6',3,'1-minute hard effort'));break;
+    case 'sprints':add(20,'Z2','Easy warm up');for(let i=0;i<6;i++){add(0.25,'Z7','Sprint, 15 s');add(4.75,'Z2','Easy recovery')}
+      if(T-50>0)add(T-50,'Z2','Steady endurance');break;
+    case 'racepace':structured(()=>ctx.fam==='ultra'?reps(2,30,'Z3',10,'Race-pace effort'):reps(3,15,'SS',5,'Race-pace effort'));break;
+    case 'taperSharp':structured(()=>{reps(3,3,'Z5',3);add(3,'Z1','Easy spin');for(let i=0;i<3;i++){add(0.2,'Z7','Sprint, 12 s');add(2,'Z1','Easy spin')}});break;
+    case 'openers':add(15,'Z2','Easy warm up');for(let i=0;i<3;i++){add(1,'Z4','1 min at threshold');add(2,'Z1','Easy spin')}
+      for(let i=0;i<3;i++){add(0.17,'Z7','10-second sprint');add(2,'Z1','Easy spin')}add(Math.max(5,T-15-9-6.5),'Z1','Cool down');break;
+    default:add(T,'Z2','Ride');
+  }
+  return {steps:S,total:S.reduce((a,s)=>a+s.min,0)};
+}
+
+/* ============ event advice ============ */
+function eventTips(p){
+  const ev=p.event,fam=eventFamily(ev),out=[];
+  if(+ev.elevationFt>=5000)out.push({t:'Altitude',d:`Your event reaches about ${(+ev.elevationFt).toLocaleString()} ft. Aerobic power drops at altitude, so plan to ride at a lower power or heart rate than at home and pace the first hours conservatively. If you can, arrive at least 10–14 days early to start adapting; if not, arriving the day before is a common alternative. Drink more than usual and ask your doctor to check iron levels a few months out.`});
+  if(fam==='ultra')out.push({t:'Fueling is a skill you train',d:`For events over 2.5 hours, research supports 60–90 g of carbohydrate per hour, using mixed sugars (glucose plus fructose) at the high end. Start lower on long rides and build up so your gut adapts. Practice every long ride with the exact foods and drinks you will use on the day.`});
+  else if(fam==='endurance')out.push({t:'Fueling',d:`For 1–2.5 hour efforts, 30–60 g of carbohydrate per hour is the usual target. Practice it on long rides and race simulations.`});
+  if(ev.type==='mtb'||ev.type==='gravel')out.push({t:'Skills and equipment',d:`Technical riding costs energy when you’re tense. The weekly skills ride and the Skills tab are part of the plan. Do your long rides on your race bike with race tires and pressures.`});
+  if(ev.type==='crit'||ev.type==='road')out.push({t:'Riding in a group',d:`Practice group riding before the event: hold your line, ride smoothly, and get comfortable close to other wheels. Drafting saves a large share of your energy.`});
+  if(fam==='ultra')out.push({t:'Pacing and cutoffs',d:`Most long-event mistakes happen in the first hour. Ride the opening at endurance effort even when others go faster. If the event has time cutoffs, work out the pace you need for each checkpoint and carry it on your top tube.`});
+  if(+p.age>=50)out.push({t:'Recovery for masters riders',d:`Your plan uses a lighter week every third week instead of every fourth, keeps some high-intensity work year-round, and keeps strength training in every phase. Sleep and protein (about 1.6 g per kg of body weight per day, spread across meals) matter more with age.`});
+  return out;
+}
+
+/* ============ state ============ */
+const LS='switchback.v1';
+const state={view:'today',sel:null,exFilter:'all',plan:null,store:null,example:true,downloads:null};
+function loadStore(){try{const s=JSON.parse(localStorage.getItem(LS)||'null');if(s&&s.profile)return s}catch(e){}return null}
+function saveStore(){try{localStorage.setItem(LS,JSON.stringify(state.store))}catch(e){}}
+(function init(){
+  const s=loadStore();
+  if(s){state.store=s;state.example=!!s.example}else{state.store={profile:exampleProfile(),done:{},example:true};state.example=true}
+  state.plan=generatePlan(state.store.profile);
+  state.sel=dkey(today());
+})();
+function findDay(k){
+  const pl=state.plan;if(!pl||pl.error)return null;
+  for(const w of pl.weeks)for(const d of w.days)if(dkey(d.date)===k)return {week:w,day:d};
+  return null;
+}
+function toast(msg){const t=document.createElement('div');t.className='toast';t.setAttribute('role','status');t.textContent=msg;document.body.appendChild(t);setTimeout(()=>t.remove(),2600)}
+
+/* ============ render helpers ============ */
+const P=()=>state.store.profile;
+function dayZone(d){
+  const it=d.items;
+  if(it.some(x=>x.kind==='race'))return 'RACE';
+  const r=it.find(x=>x.kind==='ride');
+  if(r)return r.zone;
+  if(it.some(x=>x.kind==='strength'))return 'GYM';
+  return 'REST';
+}
+function dayLabel(d){
+  return d.items.map(x=>x.kind==='ride'?`${x.title} · ${fmtH(x.hours)}`:x.kind==='strength'?`${x.title} · ${x.minutes} min`:x.kind==='race'?`🏁 ${x.title}`:x.title).join(' + ');
+}
+function profileBars(steps){
+  const tot=steps.reduce((a,s)=>a+s.min,0)||1;
+  return `<div class="profile" role="img" aria-label="Workout intensity profile">${steps.map(s=>`<i class="z${s.z}" style="--w:${(s.min/tot*1000).toFixed(1)};--h:${Math.round(Z(s.z).i/7.2*100)}%" title="${esc(fmtMin(s.min))} ${esc(s.label)}"></i>`).join('')}</div>`;
+}
+function zoneChip(k){return `<span class="chip z${k}"><span class="dot"></span>${k==='SS'?'Sweet spot':`${k} ${Z(k).name}`}</span>`}
+
+/* ============ views ============ */
+function vToday(){
+  const p=P(),pl=state.plan;
+  if(pl.error)return `<div class="card"><p class="err">${esc(pl.error)}</p><p style="margin-top:10px"><a class="btn primary" href="#setup">Open Setup</a></p></div>`;
+  const sel=parse(state.sel);const wkStart=monday(sel);
+  const found=findDay(state.sel);
+  let html=exampleBanner();
+  html+=`<div class="row" style="justify-content:space-between"><div><div class="eyebrow">${found?`Week ${found.week.i+1} of ${pl.N} · ${phaseName(found.week)}`:'Outside your plan'}</div></div>
+    <div class="row"><button class="btn" data-act="wk" data-n="-7" aria-label="Previous week">←</button><button class="btn" data-act="today">Today</button><button class="btn" data-act="wk" data-n="7" aria-label="Next week">→</button></div></div>`;
+  html+=`<div class="strip" role="group" aria-label="Days of this week">`;
+  for(let i=0;i<7;i++){
+    const d=addDays(wkStart,i),k=dkey(d),f=findDay(k);const z=f?dayZone(f.day):'REST';const done=state.store.done[k];
+    html+=`<button class="z${z} ${k===dkey(today())?'is-today':''} ${done?'done':''}" aria-pressed="${k===state.sel}" data-act="sel" data-k="${k}"><span class="dn">${DAYN[i]}</span><span class="dd">${d.getDate()}</span><span class="bar"></span><span class="tick">${done?'✓ done':''}</span></button>`;
+  }
+  html+=`</div>`;
+  if(!found){
+    const before=sel<pl.start;
+    html+=`<div class="card"><h2>${before?'Your plan hasn’t started yet':'Your event is done'}</h2><p class="muted" style="margin-top:8px">${before?`Training starts ${fmtD(pl.start)}.`:'Set up your next event in Setup.'}</p></div>`;
+    return html;
+  }
+  const {day,week}=found;
+  const isToday=state.sel===dkey(today());
+  html+=day.items.map((it,idx)=>itemCard(it,day,week,isToday,idx)).join('');
+  return html;
+}
+function phaseName(w){if(w.isRace)return 'Race week';if(w.phase==='taper')return 'Taper';const n={base:'Base',build:'Build',peak:'Peak'}[w.phase];return w.recovery?`${n} · recovery week`:n}
+function itemCard(it,day,week,isToday,idx){
+  const k=dkey(day.date);const p=P();
+  const when=`${isToday?'Today · ':''}${fmtD(day.date)}`;
+  const doneBox=idx===0&&it.kind!=='rest'?`<label class="done-toggle"><input type="checkbox" id="done-${k}" data-act="done" data-k="${k}" ${state.store.done[k]?'checked':''}>Mark done</label>`:'';
+  if(it.kind==='rest'){
+    return `<section class="card zREST"><div class="eyebrow">${when}</div><h1 class="day-title" style="margin-top:6px">${esc(it.title)}</h1>
+      <p class="muted" style="margin-top:10px;max-width:60ch">${esc(it.note||'Rest is when the training turns into fitness. A walk or gentle mobility is fine.')}</p>
+      ${week.recovery?'<p style="margin-top:8px" class="small">This is a recovery week: lighter on purpose so your body can absorb the work.</p>':''}</section>`;
+  }
+  if(it.kind==='race'){
+    const ev=p.event;
+    return `<section class="card"><div class="eyebrow">${when}</div><h1 class="day-title" style="margin-top:6px">🏁 ${esc(it.title)}</h1>
+      <p style="margin-top:10px">Race day. Everything you’ve practiced comes together.</p>
+      <ul class="tips"><li>Eat a familiar, carb-rich breakfast 3–4 hours before the start.</li><li>Start easier than you want to. Ride the first hour at endurance effort.</li>
+      ${eventFamily(ev)!=='short'?'<li>Eat from the first 30 minutes and keep a steady rhythm: your practiced grams per hour.</li>':''}
+      <li>Nothing new on race day: same food, same clothes, same bike setup.</li></ul>${doneBox?`<div style="margin-top:14px">${doneBox}</div>`:''}</section>`;
+  }
+  if(it.kind==='strength'){
+    const pre=SPRESC[it.stage];const list=SESS[it.which].map(x=>x==='jump'&&(+p.age>=65||p.experience==='new')?'stepup':x);
+    const home=p.strength==='home';
+    return `<section class="card zGYM"><div class="row" style="justify-content:space-between"><div class="eyebrow">${when}</div>${doneBox}</div>
+      <h${idx?2:1} class="${idx?'':'day-title'}" style="margin-top:6px">${esc(it.title)}</h${idx?2:1}>
+      <div class="metrics"><div class="metric"><div class="v">${it.minutes} min</div><div class="k">Session</div></div><div class="metric"><div class="v">${esc(pre.name)}</div><div class="k">Phase</div></div><div class="metric"><div class="v">${esc(pre.rest)}</div><div class="k">Rest between sets</div></div></div>
+      <p style="margin-top:12px"><b>${esc(pre.sets)}.</b> ${esc(pre.effort)}. <span class="muted">${esc(pre.note)}</span></p>
+      <p class="small muted" style="margin-top:6px">Warm up with 5–10 minutes of easy spinning or brisk walking first.</p>
+      <table class="steps"><tbody>${list.map(x=>{const e=EX[x];return `<tr><td>${e.core?esc(coreReps(x)):x==='jump'?'3 × 5':'see above'}</td><td><b>${esc(e.name)}</b><div class="target">${esc(home?e.home:e.gym)}</div></td><td style="text-align:right"><button class="btn small" data-act="ex" data-x="${x}">How to</button></td></tr>`}).join('')}</tbody></table></section>`;
+  }
+  const zs=[...new Set(it.steps.map(s=>s.z))].sort((a,b)=>Z(b).i-Z(a).i);
+  const mainZ=zs[0];
+  return `<section class="card z${it.zone}"><div class="row" style="justify-content:space-between"><div class="eyebrow">${when}</div>${doneBox}</div>
+    <h${idx?2:1} class="${idx?'':'day-title'}" style="margin-top:6px">${esc(it.title)}</h${idx?2:1}>
+    <div class="metrics">
+      <div class="metric"><div class="v mono">${fmtH(it.hours)}</div><div class="k">Duration</div></div>
+      <div class="metric"><div class="v">${mainZ==='SS'?'Sweet spot':mainZ+' '+Z(mainZ).name}</div><div class="k">Hardest zone</div></div>
+      <div class="metric" style="min-width:0"><div class="v mono" style="font-size:1.1rem;padding-top:6px;line-height:1.35">${targetParts(mainZ,p).map(x=>`<span style="white-space:nowrap">${esc(x)}</span>`).join(' · ')}</div><div class="k">Target</div></div>
+    </div>
+    ${profileBars(it.steps)}
+    <table class="steps"><tbody>${it.steps.map(s=>`<tr class="z${s.z}"><td>${fmtMin(s.min)}</td><td class="sw"><span></span></td><td>${esc(s.label)}<div class="target">${esc(s.z==='SS'?'Sweet spot':s.z+' '+Z(s.z).name)} · ${esc(targetStr(s.z,p))}</div></td></tr>`).join('')}</tbody></table>
+    <div class="cols" style="margin-top:16px"><div><div class="eyebrow">Why this workout</div><p style="margin-top:4px">${esc(it.purpose)}</p></div>
+    <div><div class="eyebrow">Tips</div><ul class="tips">${it.tips.map(t=>`<li>${esc(t)}</li>`).join('')}</ul></div></div></section>`;
+}
+function exampleBanner(){
+  if(!state.example)return '';
+  return `<div class="banner"><span><b>Example plan.</b> This is a sample rider training for a 100-mile mountain bike race. Enter your own details to build your plan.</span><a class="btn primary" href="#setup">Build my plan</a></div>`;
+}
+function vPlan(){
+  const p=P(),pl=state.plan;
+  if(pl.error)return `<div class="card"><p class="err">${esc(pl.error)}</p></div>`;
+  const N=pl.N;const t=today();const curI=pl.weeks.findIndex(w=>t>=w.start&&t<addDays(w.start,7));
+  const peakH=Math.max(...pl.weeks.map(w=>w.total));const longest=Math.max(...pl.weeks.flatMap(w=>w.days.flatMap(d=>d.items.filter(x=>x.kind==='ride').map(x=>x.hours))));
+  let h=exampleBanner();
+  h+=`<section class="stack"><div><div class="eyebrow">Your plan</div><h1 style="margin-top:4px">${esc(p.event.name||'Your event')}</h1>
+    <p class="muted" style="margin-top:6px">${fmtD(pl.eventDate)} ${pl.eventDate.getFullYear()} · ${N} weeks from ${fmtShort(pl.start)} · recovery week every ${pl.k===3?'3rd':'4th'} week</p></div>
+    <div class="stats card"><div class="stat"><div class="v mono">${N}</div><div class="k">Weeks</div></div><div class="stat"><div class="v mono">${fmtH(peakH)}</div><div class="k">Biggest week</div></div><div class="stat"><div class="v mono">${fmtH(longest)}</div><div class="k">Longest ride</div></div><div class="stat"><div class="v mono">${p.days.filter(Boolean).length}</div><div class="k">Riding days a week</div></div></div>`;
+  h+=`<div class="card"><div class="eyebrow">Phases</div><div class="timeline">`;
+  for(const [k,n] of Object.entries(pl.phases))if(n)h+=`<span class="ph-${k}" style="flex:${n}" title="${k}: ${n} weeks">${n>=2?k[0].toUpperCase()+k.slice(1):''}</span>`;
+  if(curI>=0)h+=`<i class="now" style="left:calc(${((curI+0.5)/N*100).toFixed(2)}% - 1px)" title="This week"></i>`;
+  h+=`</div><div class="legend"><span><i class="ph-base"></i>Base: aerobic foundation, heavy strength</span><span><i class="ph-build"></i>Build: harder intervals</span><span><i class="ph-peak"></i>Peak: race-specific</span><span><i class="ph-taper"></i>Taper: freshen up</span></div></div>`;
+  h+=pl.notes.map(n=>`<div class="banner"><span>${esc(n)}</span></div>`).join('');
+  h+=`<div class="card"><div class="row" style="justify-content:space-between"><div><div class="eyebrow">Take it with you</div><p class="small muted" style="margin-top:4px">PDF to print or keep on your phone. Calendar file imports into Google Calendar (Settings → Import).</p></div>
+    <div class="row" id="dl-row"><button class="btn primary" data-act="pdf">Download PDF</button><button class="btn" data-act="csv">Calendar file (.csv)</button></div></div><p class="small muted" id="dl-note" hidden style="margin-top:8px">Downloads aren’t available in this view. Open the page in a browser to save files.</p></div>`;
+  h+=zonesCard();
+  const tips=eventTips(p);
+  if(tips.length)h+=`<div class="card"><div class="eyebrow">For this event</div><div style="margin-top:6px">${tips.map(x=>`<div class="principle"><h3>${esc(x.t)}</h3><p>${esc(x.d)}</p></div>`).join('')}</div></div>`;
+  h+=`<div class="stack" style="gap:8px"><h2>Week by week</h2>`;
+  pl.weeks.forEach((w,i)=>{
+    const ph=w.isRace?'taper':w.phase;
+    h+=`<details class="week" ${i===curI||(curI<0&&i===0)?'open':''}><summary><span class="wk-n mono">${i+1}</span><span class="wk-meta"><b>${phaseName(w)}</b><span class="d"> · ${fmtShort(w.start)}–${fmtShort(addDays(w.start,6))} · ${fmtH(w.total)} riding</span></span>
+      <span class="wk-bars" aria-hidden="true">${w.days.map(d=>{const r=d.items.filter(x=>x.kind==='ride').reduce((a,x)=>a+x.hours,0);const z=dayZone(d);return `<i class="z${z}" style="--h:${z==='RACE'?100:z==='REST'?8:z==='GYM'?14:Math.max(14,Math.round(r/Math.max(1,peakH*0.45)*100))}%"></i>`}).join('')}</span></summary>
+      <div class="wk-days">${w.days.map(d=>{const k=dkey(d.date);return `<div class="wk-day ${k===dkey(t)?'today':''}"><span class="when">${fmtD(d.date)}</span><span>${d.items.some(x=>x.kind!=='rest')?`<button data-act="goto" data-k="${k}">${esc(dayLabel(d))}</button>`:`<span class="muted">${esc(dayLabel(d))}</span>`}</span><span class="small">${state.store.done[k]?'✓':''}</span></div>`}).join('')}</div></details>`;
+  });
+  h+=`</div></section>`;
+  return h;
+}
+function zonesCard(){
+  const p=P();const mh=hrMax(p);
+  return `<div class="card"><div class="eyebrow">Your training zones</div>
+  <p class="small muted" style="margin-top:4px">${+p.ftp?`Power from FTP ${+p.ftp} W. `:'Add your FTP in Setup for power targets. '}${+p.lthr?`Heart rate from threshold HR ${+p.lthr} bpm.`:mh?`Heart rate from ${mh.est?'an age-estimated':'your'} max HR of ${mh.v} bpm${mh.est?'; a field test is more accurate':''}.`:'Add heart rate data in Setup for HR targets.'}</p>
+  <div class="tblwrap" style="margin-top:8px"><table class="zones"><thead><tr><th>Zone</th><th>Power</th><th>Heart rate</th><th>Effort</th><th>Talk test</th></tr></thead><tbody>
+  ${ZONES.map(z=>{const t=zoneTargets(z.k,p);return `<tr><td>${zoneChip(z.k)}</td><td class="mono">${esc(t.power||'—')}</td><td class="mono">${esc(t.hr||'—')}</td><td class="mono">${esc(t.rpe)}</td><td>${esc(z.talk)}</td></tr>`}).join('')}
+  </tbody></table></div></div>`;
+}
+function vStrength(){
+  const p=P();const home=p.strength==='home';
+  const f=state.exFilter;
+  const keys=Object.keys(EX).filter(k=>f==='all'||EX[k].pattern===f||(f==='core'&&EX[k].core));
+  const pats=['all','squat','hinge','single-leg','push','pull','core','power'];
+  let h=`<section class="stack"><div><div class="eyebrow">Gym</div><h1 style="margin-top:4px">Strength for cyclists</h1>
+  <p style="margin-top:8px;max-width:68ch">Heavy strength training, added to normal riding, improves cycling efficiency and late-race power in trained cyclists, without adding bulk. For riders over 40 it also protects muscle mass and bone density, which cycling alone does not load.</p></div>
+  <div class="card"><div class="eyebrow">How it changes through the season</div><div class="tblwrap" style="margin-top:8px"><table class="zones"><thead><tr><th>Phase</th><th>When</th><th>Sets × reps</th><th>Per week</th></tr></thead><tbody>
+  <tr><td><b>Foundation</b></td><td>First 3 weeks</td><td class="mono">2–3 × 12–15</td><td>2</td></tr>
+  <tr><td><b>Max strength</b></td><td>Rest of base</td><td class="mono">3–4 × 4–6</td><td>2</td></tr>
+  <tr><td><b>Maintenance</b></td><td>Build and peak</td><td class="mono">2–3 × 4–6</td><td>1–2</td></tr>
+  <tr><td><b>None</b></td><td>Taper and race week</td><td class="mono">—</td><td>0</td></tr></tbody></table></div>
+  <p class="small muted" style="margin-top:10px">Session A: squat, Romanian deadlift, push-up, dead bug, side plank. Session B: split squat, hip thrust, row, pulldown, Pallof press, calf raise. Maintenance: squat, split squat, box jump, row, plank.</p></div>
+  <div class="card"><div class="eyebrow">Watch first: GCN and GTN</div>${featList(FEATURED.strength)}<p class="small muted" style="margin-top:8px">Each exercise below links to GCN and GTN’s own videos on that movement.</p></div>
+  <div class="filter" role="group" aria-label="Filter exercises">${pats.map(x=>`<button aria-pressed="${f===x}" data-act="exf" data-f="${x}">${x==='all'?'All':x[0].toUpperCase()+x.slice(1)}</button>`).join('')}</div>
+  <div class="stack" style="gap:12px">`;
+  h+=keys.map(k=>exCard(k,home)).join('');
+  h+=`</div><div class="card"><h2>Post-ride mobility</h2><p class="muted small" style="margin-top:4px">10 minutes after rides or on rest days.</p>
+  <div style="margin-top:10px">${MOBILITY.map(m=>`<div class="principle"><h3>${esc(m.name)}</h3><p>${esc(m.how)}</p><p class="small muted">${esc(m.why)}</p></div>`).join('')}</div></div></section>`;
+  return h;
+}
+function exCard(k,home){
+  const e=EX[k];
+  return `<article class="card ex" id="ex-${k}"><div class="ex-fig" aria-hidden="true"><svg viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round" stroke-linejoin="round">${FIG[e.pattern]||FIG.core}</svg></div>
+  <div style="min-width:0"><div class="eyebrow">${esc(e.pattern)}</div><h3>${esc(e.name)}</h3><p class="small" style="margin-top:4px">${esc(e.why)}</p>
+  <dl><dt>Gym</dt><dd>${esc(e.gym)}</dd><dt>Home</dt><dd>${esc(e.home)}</dd><dt>Cues</dt><dd>${e.cues.map(esc).join(' ')}</dd><dt>Avoid</dt><dd>${e.mistakes.map(esc).join(' ')}</dd></dl>
+  <p class="row" style="margin-top:10px">${ytLinks(e.vq)}</p></div></article>`;
+}
+const ARTICLES=[
+ {t:'Bike fit basics',q:'bike fit saddle height',b:['A good fit prevents most overuse pain and lets you produce power for hours. A professional fit is worth it before a big training year; these are the basics to check.','<b>Saddle height:</b> at the bottom of the stroke, with your heel on the pedal, your leg should be straight. With the ball of the foot on the pedal, that leaves a slight bend (roughly 25–35° at the knee).','<b>Saddle position:</b> level, or nose down a degree or two. Knee pain at the front often means too low; pain behind the knee often means too high.','<b>Reach:</b> elbows slightly bent and shoulders relaxed. Numb hands or a sore neck usually means too much reach or too much weight on the hands.','<b>Cleats:</b> ball of the foot over the pedal axle; let the feet sit at their natural angle.']},
+ {t:'Pedaling and cadence',q:'pedalling technique cadence',b:['Most riders are efficient between about 80 and 95 rpm on flat ground and somewhat lower on steep climbs. There is no single right cadence; smooth matters more than fast.','<b>Drill: high-cadence spin-ups.</b> During an endurance ride, raise cadence gradually over 1 minute until you start bouncing on the saddle, then back off slightly and hold 30 seconds. 4–5 repeats.','<b>Drill: single-leg focus.</b> On a trainer, unclip one foot and pedal 30–60 seconds with the other, aiming for no “dead spot” at the top. Switch legs.','Relax your upper body. Tension in the shoulders and grip wastes energy over long events.']},
+ {t:'Climbing',q:'how to climb',b:['<b>Seated</b> climbing is more efficient for steady grades: slide back on the saddle, relax the arms, and keep a steady rhythm.','<b>Standing</b> uses more energy but uses different muscles and helps on steep pitches. Shift up one or two gears as you stand so your cadence doesn’t spike, and let the bike rock gently under you.','<b>Pace the climb, not the moment.</b> Start a long climb at an effort you could hold to the top. On long events, climbs are where most riders overspend.','<b>On loose climbs (MTB/gravel):</b> stay seated to keep weight on the rear wheel, lower your chest toward the bars to keep the front wheel down, and keep pedal strokes smooth to avoid spinning out.']},
+ {t:'Descending and cornering',q:'descending cornering',b:['<b>Look where you want to go</b>, through the exit of the corner, not at the obstacle.','<b>Brake before the corner</b>, in a straight line, then release and roll through.','<b>Outside pedal down, weight on it</b>, inside knee and elbow relaxed. Lean the bike more than your body.','<b>Mountain bike descending:</b> use the “attack position”: pedals level, knees and elbows bent, hips back, eyes up. Your arms and legs are the suspension; let the bike move under you.','Practice the same corner several times at increasing speed rather than riding many corners once.']},
+ {t:'Rough terrain and trail skills',q:'gravel skills',b:['<b>Light hands, heavy feet.</b> Weight goes through the pedals, not the handlebar.','<b>Speed is your friend</b> over rocks and roots. Momentum carries you over obstacles that stop you at walking pace.','<b>Line choice:</b> look 3–5 seconds ahead and pick the smoothest line early.','<b>Drills for the skills ride:</b> track stands (balance stopped for 10+ seconds), tight figure-eights in a parking lot, riding over a 2×4 on the ground, braking hard to a stop in a marked distance, unclipping quickly on both sides.','Practice walking and pushing your bike uphill efficiently. In long mountain events most riders walk some sections.']},
+ {t:'Fueling and hydration',q:'fuelling nutrition',b:['<b>Before:</b> a carb-rich meal 2–4 hours before key sessions and events.','<b>During:</b> under 1 hour, water is usually enough. 1–2.5 hours: 30–60 g carbohydrate per hour. Over 2.5 hours: 60–90 g per hour, using glucose and fructose blends at higher amounts.','<b>Train the gut:</b> start at what you tolerate and add 10 g per hour every week or two on long rides.','<b>Fluids:</b> drink to thirst, typically 400–800 ml per hour depending on heat and size. Add sodium on long or hot rides. Weigh yourself before and after long rides: losing more than 2–3% of body weight means drink more next time.','<b>After:</b> carbohydrate plus about 20–40 g of protein within a couple of hours. Daily protein of about 1.6 g per kg supports strength gains.']},
+ {t:'Altitude',q:'altitude',b:['Less oxygen at altitude lowers aerobic power, and the effect grows as you go higher. The same power feels harder and your heart rate runs higher.','<b>Pace by feel and power, not your sea-level heart rate.</b> Expect to ride somewhat slower on climbs.','<b>Timing:</b> adaptation takes weeks. Arriving 10–14+ days early helps; arriving the day before minimizes the time you feel worst. The days in between are often the hardest.','<b>Hydrate more</b>: the air is dry and you breathe more.','<b>Iron:</b> your body needs iron to adapt. Ask your doctor about checking ferritin a few months before the event. Don’t supplement without testing.','Headache, nausea or unusual breathlessness at rest are warning signs. Descend and seek medical help if they get worse.']},
+ {t:'Pacing long events',q:'pacing',b:['The most common mistake is starting too hard. Plan to ride the first hour at endurance effort even if others go faster.','<b>Climb steady, descend smart, eat constantly.</b> Most time is lost by slowing down late, not by riding too slowly early.','Break the event into segments with a plan for each: effort, food, water, and where you’ll refill.','If there are time cutoffs, write the target times on tape on your top tube.']},
+ {t:'Recovery and sleep',q:'recovery sleep',b:['Fitness is built while you recover, not while you train. Easy days should be truly easy so hard days can be truly hard.','<b>Sleep</b> 7–9 hours. It is the most effective recovery tool.','<b>Warning signs</b> of doing too much: resting heart rate up more than 5–7 bpm for several days, poor sleep, irritability, heavy legs that don’t improve with rest. Take extra easy days.','Recovery weeks are part of the plan, not a break from it.']},
+];
+function vTechnique(){
+  return `<section class="stack"><div><div class="eyebrow">Skills</div><h1 style="margin-top:4px">Form and technique</h1>
+  <p class="muted" style="margin-top:6px;max-width:68ch">Riding skills and race craft. Tap a topic to open it. Each topic links to GCN and GTN videos on it.</p></div>
+  <div class="card">${ARTICLES.map((a,i)=>`<details class="art" ${i===0?'open':''}><summary>${esc(a.t)}</summary><div class="body">${a.b.map(x=>`<p>${x}</p>`).join('')}${a.t==='Bike fit basics'?featList(FEATURED.fit):''}<p class="row">${ytLinks(a.q)}</p></div></details>`).join('')}</div></section>`;
+}
+const REFS=[
+ 'Seiler KS, Kjerland GØ. Quantifying training intensity distribution in elite endurance athletes: is there evidence for an “optimal” distribution? Scand J Med Sci Sports. 2006;16(1):49–56.',
+ 'Stöggl T, Sperlich B. Polarized training has greater impact on key endurance variables than threshold, high intensity, or high volume training. Front Physiol. 2014;5:33.',
+ 'Rønnestad BR, Mujika I. Optimizing strength training for running and cycling endurance performance: a review. Scand J Med Sci Sports. 2014;24(4):603–612.',
+ 'Rønnestad BR, Hansen EA, Raastad T. Effect of heavy strength training on thigh muscle cross-sectional area, performance determinants, and performance in well-trained cyclists. Eur J Appl Physiol. 2010;108(5):965–975.',
+ 'Rønnestad BR, Hansen J, Vegge G, Tønnessen E, Slettaløkken G. Short intervals induce superior training adaptations compared with long intervals in cyclists: an effort-matched approach. Scand J Med Sci Sports. 2015;25(2):143–151.',
+ 'Bosquet L, Montpetit J, Arvisais D, Mujika I. Effects of tapering on performance: a meta-analysis. Med Sci Sports Exerc. 2007;39(8):1358–1365.',
+ 'Jeukendrup A. A step towards personalized sports nutrition: carbohydrate intake during exercise. Sports Med. 2014;44(Suppl 1):S25–S33.',
+ 'Thomas DT, Erdman KA, Burke LM. American College of Sports Medicine Joint Position Statement: Nutrition and Athletic Performance. Med Sci Sports Exerc. 2016;48(3):543–568.',
+ 'Morton RW, et al. A systematic review, meta-analysis and meta-regression of the effect of protein supplementation on resistance training-induced gains in muscle mass and strength in healthy adults. Br J Sports Med. 2018;52(6):376–384.',
+ 'Tanaka H, Seals DR. Endurance exercise performance in Masters athletes: age-associated changes and underlying physiological mechanisms. J Physiol. 2008;586(1):55–63.',
+ 'Wehrlin JP, Hallén J. Linear decrease in VO2max and performance with increasing altitude in endurance athletes. Eur J Appl Physiol. 2006;96(4):404–412.',
+ 'Tanaka H, Monahan KD, Seals DR. Age-predicted maximal heart rate revisited. J Am Coll Cardiol. 2001;37(1):153–156.',
+ 'Issurin VB. New horizons for the methodology and physiology of training periodization. Sports Med. 2010;40(3):189–206.',
+ 'Allen H, Coggan AR, McGregor S. Training and Racing with a Power Meter. 3rd ed. VeloPress; 2019.',
+ 'Friel J. The Cyclist’s Training Bible. 5th ed. VeloPress; 2018. Also: Friel J. Fast After 50. VeloPress; 2015.',
+];
+const PRINC=[
+ {t:'Most riding is easy',r:[1,2],d:'Well-trained endurance athletes do roughly 75–80% of their training at low intensity, with the hard work concentrated in a few sessions. Your plan keeps most hours in Zones 1–2 and limits hard days to one or two a week.'},
+ {t:'Build, then absorb',r:[13,15],d:'Training load rises gradually, with a lighter recovery week every 3–4 weeks. Riders over 50 and newer riders get a recovery week every 3rd week.'},
+ {t:'Phases: base, build, peak, taper',r:[13,14,15],d:'General aerobic fitness and strength come first, then harder intervals, then work that matches the event, then a taper. The interval types depend on your event: long efforts for ultra-endurance, shorter and sharper work for crits.'},
+ {t:'Short intervals work',r:[5],d:'Short work intervals like 30 s on / 15 s off produced larger gains than longer intervals of matched effort in trained cyclists, so they appear in the build phase alongside classic 3–5 minute efforts.'},
+ {t:'Taper: cut volume, keep intensity',r:[6],d:'A meta-analysis found the best results from tapers of about two weeks that reduce training volume by roughly 40–60% while keeping intensity and frequency. Longer events get a two-week taper.'},
+ {t:'Lift heavy',r:[3,4],d:'Heavy strength training (about 4–10 rep maximum) added to endurance training improved cycling economy and performance in trained cyclists. Gains were maintained with one session a week during the season.'},
+ {t:'Fuel the work',r:[7,8,9],d:'Carbohydrate targets scale with event length, up to 60–90 g per hour for events over 2.5 hours. Daily protein around 1.6 g/kg supports strength gains.'},
+ {t:'Masters athletes',r:[10,15],d:'Endurance performance declines with age, but training slows much of that decline. Keeping some intensity and strength work year-round, and allowing more recovery, is the common recommendation.'},
+ {t:'Zones',r:[12,14,15],d:'Power zones are based on FTP; heart rate zones on threshold heart rate. Without either, max heart rate is estimated from age (208 − 0.7 × age), which can be off by 10+ bpm for individuals. A field test is better.'},
+ {t:'Altitude',r:[11],d:'Aerobic capacity and performance fall steadily as altitude increases, even at moderate altitudes, so pacing targets need adjusting for high events.'},
+];
+function vScience(){
+  return `<section class="stack"><div><div class="eyebrow">Science</div><h1 style="margin-top:4px">What the plan is based on</h1>
+  <p style="margin-top:8px;max-width:68ch">Each rule in the plan generator comes from published research or established coaching practice. Numbers in brackets refer to the sources below.</p></div>
+  <div class="card">${PRINC.map(x=>`<div class="principle"><h3>${esc(x.t)} <span class="small muted mono">[${x.r.join(', ')}]</span></h3><p>${esc(x.d)}</p></div>`).join('')}</div>
+  <div class="card"><h2>Sources</h2><ol class="refs" style="margin-top:10px">${REFS.map(r=>`<li>${esc(r)} <a href="https://pubmed.ncbi.nlm.nih.gov/?term=${encodeURIComponent(r.split('. ')[1]||r)}" target="_blank" rel="noopener" class="small">Search PubMed ↗</a></li>`).join('')}</ol></div>
+  <div class="banner"><span><b>Not medical advice.</b> This is general training guidance. Check with a doctor before starting a new training program, especially if you are over 40, new to exercise, or have a heart, lung or other health condition. Stop and get help for chest pain, dizziness or unusual breathlessness.</span></div></section>`;
+}
+function vSetup(){
+  const p=state.example?exampleProfile():P();const ev=p.event;
+  const opt=(v,cur,l)=>`<option value="${v}" ${String(cur)===String(v)?'selected':''}>${l}</option>`;
+  return `<form class="setup" id="setup-form" novalidate><div><div class="eyebrow">Setup</div><h1 style="margin-top:4px">Build your plan</h1>
+  <p class="muted" style="margin-top:6px;max-width:68ch">${state.example?'The form is filled in with the example rider. Replace it with your own details.':'Change anything and rebuild. Your progress checkmarks are kept.'} Everything stays on this device.</p></div>
+  <fieldset><legend>Your event</legend><div class="grid2">
+   <label class="f" for="f-ev-name">Event name<input type="text" id="f-ev-name" value="${esc(ev.name)}" placeholder="e.g. Gran fondo, 100-mile MTB race"></label>
+   <label class="f" for="f-ev-date">Event date<input type="date" id="f-ev-date" value="${esc(ev.date)}" required></label>
+   <label class="f" for="f-ev-type">Type of event<select id="f-ev-type">${opt('mtb',ev.type,'Mountain bike (marathon / 100-mile)')}${opt('gravel',ev.type,'Gravel')}${opt('road',ev.type,'Road: century or gran fondo')}${opt('crit',ev.type,'Criterium or short circuit race')}${opt('tt',ev.type,'Time trial / triathlon bike')}${opt('climb',ev.type,'Hill climb')}${opt('stage',ev.type,'Multi-day or stage event')}</select></label>
+   <label class="f" for="f-ev-dur">Expected finish time (hours)<span class="hint">Your best guess. For multi-day events, the longest day.</span><input type="number" id="f-ev-dur" min="0.25" max="30" step="0.25" value="${esc(ev.durationH)}"></label>
+   <label class="f" for="f-ev-elev">Highest elevation (ft)<span class="hint">Optional. Adds altitude advice above 5,000 ft.</span><input type="number" id="f-ev-elev" min="0" max="20000" step="100" value="${esc(ev.elevationFt)}"></label>
+   <label class="f" for="f-ev-goal">Goal<select id="f-ev-goal">${opt('finish',ev.goal,'Finish strong')}${opt('time',ev.goal,'Hit a time goal')}${opt('compete',ev.goal,'Compete for placing')}</select></label>
+  </div></fieldset>
+  <fieldset><legend>About you</legend><div class="grid2">
+   <label class="f" for="f-name">Name<input type="text" id="f-name" value="${esc(state.example?'':p.name)}" placeholder="Optional"></label>
+   <label class="f" for="f-age">Age<input type="number" id="f-age" min="12" max="95" value="${esc(p.age)}"></label>
+   <label class="f" for="f-exp">Cycling experience<select id="f-exp">${opt('new',p.experience,'New: less than a year of regular riding')}${opt('some',p.experience,'Some: 1–3 years')}${opt('experienced',p.experience,'Experienced: 3+ years, has raced')}</select></label>
+   <label class="f" for="f-str">Strength training<select id="f-str">${opt('gym',p.strength,'I have gym access')}${opt('home',p.strength,'At home (dumbbells, bands, bodyweight)')}${opt('none',p.strength,'No strength training')}</select></label>
+  </div></fieldset>
+  <fieldset><legend>Fitness numbers</legend><p class="small muted" style="margin-bottom:12px">All optional. Without them, workouts use effort (RPE) and an age-based heart rate estimate.</p><div class="grid2">
+   <label class="f" for="f-ftp">FTP (watts)<span class="hint">From a power meter or smart trainer test.</span><input type="number" id="f-ftp" min="50" max="500" value="${esc(p.ftp)}"></label>
+   <label class="f" for="f-lthr">Threshold heart rate (bpm)<span class="hint">Average HR for the last 20 min of a 30-min all-out ride.</span><input type="number" id="f-lthr" min="90" max="210" value="${esc(p.lthr)}"></label>
+   <label class="f" for="f-maxhr">Max heart rate (bpm)<span class="hint">Only if you’ve measured it.</span><input type="number" id="f-maxhr" min="100" max="230" value="${esc(p.maxhr)}"></label>
+   <label class="f" for="f-longest">Longest ride in the last month (hours)<input type="number" id="f-longest" min="0" max="12" step="0.25" value="${esc(p.longest)}"></label>
+  </div></fieldset>
+  <fieldset><legend>Your week</legend><div class="grid2">
+   <label class="f" for="f-cur">Hours riding per week now<input type="number" id="f-cur" min="0" max="30" step="0.5" value="${esc(p.currentHours)}"></label>
+   <label class="f" for="f-max">Most hours you can train per week<span class="hint">At the busiest point of the plan.</span><input type="number" id="f-max" min="2" max="30" step="0.5" value="${esc(p.maxHours)}"></label>
+   <label class="f" for="f-start">Plan start date<input type="date" id="f-start" value="${esc(state.example?dkey(today()):p.startDate)}"></label>
+   <label class="f" for="f-long">Long ride day<select id="f-long">${DAYL.map((d,i)=>opt(i,p.longDay,d)).join('')}</select></label>
+  </div>
+  <div style="margin-top:14px"><div class="f" style="font-weight:600;font-size:.88rem;margin-bottom:6px">Days you can ride</div><div class="days">${DAYN.map((d,i)=>`<label for="f-d${i}"><input type="checkbox" id="f-d${i}" ${p.days[i]?'checked':''}>${d}</label>`).join('')}</div></div></fieldset>
+  <p class="err" id="form-err" hidden></p>
+  <div class="row"><button class="btn primary" type="submit">Build my plan</button>${state.example?'':'<button class="btn" type="button" data-act="reset">Start over</button>'}</div>
+  <div class="card"><div class="eyebrow">Move to another device</div><p class="small muted" style="margin-top:4px">Your plan is saved in this browser only. Save your details as a file and load it on your phone or another computer.</p>
+  <div class="row" style="margin-top:10px"><button class="btn" type="button" data-act="savejson" ${state.example?'disabled':''}>Save my details</button><label class="btn" for="f-load">Load details file<input type="file" id="f-load" accept=".json,application/json" hidden></label></div></div>
+  <div id="reset-confirm" hidden class="banner"><span>Clear your plan and checkmarks on this device?</span><span class="row"><button class="btn" type="button" data-act="reset-no">Keep</button><button class="btn primary" type="button" data-act="reset-yes">Clear</button></span></div>
+  </form>`;
+}
+function readForm(){
+  const g=id=>document.getElementById(id);const v=id=>g(id).value.trim();
+  const days=DAYN.map((_,i)=>g('f-d'+i).checked);
+  const p={name:v('f-name'),age:+v('f-age')||'',experience:v('f-exp'),strength:v('f-str'),ftp:+v('f-ftp')||'',lthr:+v('f-lthr')||'',maxhr:+v('f-maxhr')||'',
+    longest:+v('f-longest')||1.5,currentHours:+v('f-cur')||3,maxHours:+v('f-max')||6,startDate:v('f-start')||dkey(today()),longDay:+v('f-long'),days,
+    event:{name:v('f-ev-name')||'My event',date:v('f-ev-date'),type:v('f-ev-type'),durationH:+v('f-ev-dur')||3,elevationFt:+v('f-ev-elev')||'',goal:v('f-ev-goal')}};
+  const errs=[];
+  if(!p.event.date)errs.push('Add your event date.');
+  if(days.filter(Boolean).length<3)errs.push('Pick at least 3 riding days.');
+  if(p.maxHours<p.currentHours)p.maxHours=p.currentHours;
+  if(!days[p.longDay]){const last=[5,6,4,3,2,1,0].find(i=>days[i]);if(last!=null)p.longDay=last}
+  return {p,errs};
+}
+
+/* ============ downloads ============ */
+const pdfSafe=s=>String(s).replace(/₂/g,'2').replace(/[→↗]/g,'').replace(/🏁\s?/g,'').replace(/[“”]/g,'"').replace(/[‘’]/g,"'");
+function makeCSV(){
+  const p=P(),pl=state.plan;const q=s=>`"${String(s).replace(/"/g,'""')}"`;
+  const rows=[['Subject','Start Date','All Day Event','Description'].join(',')];
+  for(const w of pl.weeks)for(const d of w.days)for(const it of d.items){
+    if(it.kind==='rest')continue;
+    const date=`${pad(d.date.getMonth()+1)}/${pad(d.date.getDate())}/${d.date.getFullYear()}`;
+    let subj,desc;
+    if(it.kind==='ride'){subj=`${it.title} (${fmtH(it.hours)})`;desc=it.steps.map(s=>`${fmtMin(s.min)} - ${s.label} - ${s.z==='SS'?'Sweet spot':s.z} (${targetStr(s.z,p)})`).join('\n')+'\n\n'+it.purpose}
+    else if(it.kind==='strength'){subj=`${it.title} (${it.minutes} min)`;desc=`${SPRESC[it.stage].sets}. `+SESS[it.which].map(x=>EX[x].name).join(', ')}
+    else{subj=`RACE: ${it.title}`;desc='Race day. Start easy, eat early, nothing new.'}
+    rows.push([q(pdfSafe(subj)),date,'True',q(pdfSafe(desc))].join(','));
+  }
+  return rows.join('\r\n');
+}
+function makePDF(){
+  const {jsPDF}=window.jspdf;const doc=new jsPDF({unit:'pt',format:'letter'});const p=P(),pl=state.plan;
+  const W=612,M=48;let y=M;
+  const line=(txt,size=10,style='normal',gap=4,color=[20,32,27])=>{doc.setFont('helvetica',style);doc.setFontSize(size);doc.setTextColor(...color);const parts=doc.splitTextToSize(pdfSafe(txt),W-2*M);for(const t of parts){if(y>792-M){doc.addPage();y=M}doc.text(t,M,y);y+=size+gap}};
+  line(`Training plan: ${p.event.name}`,18,'bold',6);
+  line(`${p.name?p.name+' | ':''}Event ${fmtD(pl.eventDate)} ${pl.eventDate.getFullYear()} | ${pl.N} weeks starting ${fmtD(pl.start)}`,10,'normal',10,[90,100,95]);
+  line('Zones',13,'bold',4);
+  ZONES.forEach(z=>{const t=zoneTargets(z.k,p);line(`${z.k} ${z.name}: ${[t.power,t.hr,t.rpe].filter(Boolean).join(' | ')} | ${z.talk}`,9,'normal',3)});
+  y+=8;
+  for(const w of pl.weeks){
+    if(y>792-M-80){doc.addPage();y=M}
+    y+=6;line(`Week ${w.i+1} | ${phaseName(w)} | ${fmtShort(w.start)} - ${fmtShort(addDays(w.start,6))} | ${fmtH(w.total)} riding`,12,'bold',5,[29,92,71]);
+    for(const d of w.days){
+      for(const it of d.items){
+        let txt;
+        if(it.kind==='ride'){const main=it.steps.filter(s=>!/warm|cool/i.test(s.label)).map(s=>`${fmtMin(s.min)} ${s.label} (${s.z==='SS'?'SS':s.z})`);txt=`${it.title}, ${fmtH(it.hours)}: ${main.join('; ')}`}
+        else if(it.kind==='strength')txt=`${it.title}, ${it.minutes} min: ${SPRESC[it.stage].sets}. ${SESS[it.which].map(x=>EX[x].name).join(', ')}`;
+        else if(it.kind==='race')txt=`RACE DAY: ${it.title}`;
+        else txt=it.title;
+        line(`${fmtD(d.date)}   ${txt}`,9,it.kind==='race'?'bold':'normal',3);
+      }
+    }
+  }
+  y+=8;line('General training guidance, not medical advice. Check with a doctor before starting a new program.',8,'italic',3,[90,100,95]);
+  return doc.output('blob');
+}
+async function offer(filename,data){
+  const dl=state.downloads;
+  if(!dl&&!state.inClaude){const blob=data instanceof Blob?data:new Blob([data]);const u=URL.createObjectURL(blob);const a=document.createElement('a');a.href=u;a.download=filename;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),2000);return}
+  if(!dl){toast('Downloads aren’t available in this view.');return}
+  try{await dl.save({filename,data});toast('Saved')}catch(e){if(e&&e.code==='declined')return;toast(e&&e.code==='rate_limited'?'A save is already open. Try again in a moment.':'Couldn’t save the file here.')}
+}
+
+/* ============ router + events ============ */
+const VIEWS={today:vToday,plan:vPlan,strength:vStrength,technique:vTechnique,science:vScience,setup:vSetup};
+function header(){
+  const pl=state.plan,p=P();const el=document.getElementById('countdown');
+  if(pl&&!pl.error){const days=Math.round((pl.eventDate-today())/864e5);el.innerHTML=days>=0?`<strong>${days>=14?Math.floor(days/7)+' wk':days+' d'}</strong> to ${esc(p.event.name)}`:`${esc(p.event.name)} is done`}
+  else el.textContent='';
+}
+function render(scrollTop){
+  const h=(location.hash||'#today').slice(1);state.view=VIEWS[h]?h:'today';
+  document.querySelectorAll('#tabs a').forEach(a=>{if(a.dataset.v===state.view)a.setAttribute('aria-current','page');else a.removeAttribute('aria-current')});
+  document.getElementById('app').innerHTML=`<div class="stack">${VIEWS[state.view]()}</div>`;
+  header();
+  if(state.view==='plan'&&!state.downloads&&state.inClaude){const n=document.getElementById('dl-note');if(n&&state.downloadsChecked){n.hidden=false;document.querySelectorAll('#dl-row button').forEach(b=>b.disabled=true)}}
+  if(scrollTop)window.scrollTo(0,0);
+}
+window.addEventListener('hashchange',()=>render(true));
+document.addEventListener('click',e=>{
+  const t=e.target.closest('[data-act]');if(!t)return;const a=t.dataset.act;
+  if(a==='sel'){state.sel=t.dataset.k;render()}
+  else if(a==='today'){state.sel=dkey(today());render()}
+  else if(a==='wk'){state.sel=dkey(addDays(parse(state.sel),+t.dataset.n));render()}
+  else if(a==='goto'){state.sel=t.dataset.k;location.hash='#today'}
+  else if(a==='exf'){state.exFilter=t.dataset.f;render()}
+  else if(a==='ex'){state.exFilter='all';location.hash='#strength';setTimeout(()=>{const el=document.getElementById('ex-'+t.dataset.x);if(el)el.scrollIntoView({block:'start'})},30)}
+  else if(a==='pdf'){try{offer(`training-plan-${dkey(state.plan.eventDate)}.pdf`,makePDF())}catch(err){toast('Couldn’t build the PDF.')}}
+  else if(a==='csv'){offer(`training-calendar-${dkey(state.plan.eventDate)}.csv`,makeCSV())}
+  else if(a==='savejson'){offer('my-training-details.json',JSON.stringify({app:'switchback',version:1,profile:P(),done:state.store.done},null,2))}
+  else if(a==='reset'){document.getElementById('reset-confirm').hidden=false}
+  else if(a==='reset-no'){document.getElementById('reset-confirm').hidden=true}
+  else if(a==='reset-yes'){try{localStorage.removeItem(LS)}catch(_){}state.store={profile:exampleProfile(),done:{},example:true};state.example=true;state.plan=generatePlan(state.store.profile);toast('Cleared');render(true)}
+});
+document.addEventListener('change',e=>{
+  const t=e.target;
+  if(t.dataset&&t.dataset.act==='done'){if(t.checked)state.store.done[t.dataset.k]=true;else delete state.store.done[t.dataset.k];if(!state.example)saveStore();render()}
+  if(t.id==='f-load'&&t.files&&t.files[0]){
+    const r=new FileReader();r.onload=()=>{try{const j=JSON.parse(r.result);if(!j.profile||!j.profile.event)throw 0;state.store={profile:j.profile,done:j.done||{},example:false};state.example=false;state.plan=generatePlan(j.profile);saveStore();toast('Details loaded');location.hash='#today';render(true)}catch(_){toast('That file isn’t a Switchback details file.')}};r.readAsText(t.files[0]);
+  }
+});
+document.addEventListener('submit',e=>{
+  if(e.target.id!=='setup-form')return;e.preventDefault();
+  const {p,errs}=readForm();const err=document.getElementById('form-err');
+  if(errs.length){err.textContent=errs.join(' ');err.hidden=false;return}
+  const plan=generatePlan(p);
+  if(plan.error){err.textContent=plan.error;err.hidden=false;return}
+  const done=state.example?{}:state.store.done;
+  state.store={profile:p,done,example:false};state.example=false;state.plan=plan;saveStore();
+  state.sel=dkey(today()<plan.start?plan.start:today());
+  toast('Plan built');location.hash='#today';render(true);
+});
+render();
+state.inClaude=!!(window.claude&&window.claude.use);
+(async()=>{try{if(window.claude&&window.claude.use){state.downloads=await window.claude.use('downloads')}}catch(_){}state.downloadsChecked=true;if(state.view==='plan')render()})();
+</script>
