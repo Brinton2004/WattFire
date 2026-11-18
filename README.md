@@ -3,6 +3,7 @@
 A cycling and running training planner for any event. A rider enters their details (age, experience, weekly hours, riding days, optional FTP and heart rate) and their event (type, date, expected finish time, elevation). The app builds a periodized plan: base, build, peak and taper.
 
 ## Features
+- **Cross-training:** with running and cycling events (or the setting turned on), every week mixes both sports. The sport of the next A race gets the long session and key workouts; the other sport fills open days or replaces easy sessions. Two recovery weeks follow a marathon or other long A race before the next block.
 - **Running:** 5K to marathon and trail plans with pace targets from a recent race time, gradual mileage build, hill/threshold/interval sessions, race-pace long runs, and a 2–3 week marathon taper. Seasons can mix running and cycling races.
 - **Race schedule:** several events per season, each marked A (peak and taper), B (short taper) or C (training race)
 - **Seasons:** schedule changes with a start date, so hours, riding days and indoor/outdoor riding can change through the year
