@@ -370,8 +370,8 @@ function exampleProfile(){
     days:[false,true,true,true,false,true,true],longDay:5,setting:'indoor',strength:'gym',startDate:dkey(m),
     events:[
       {id:'ex1',name:'100-mile mountain bike race at altitude',type:'mtb',date:dkey(addDays(m,7*38+5)),durationH:11,elevationFt:10000,goal:'finish',priority:'A'},
-      {id:'ex2',name:'50-mile gravel race',type:'gravel',date:dkey(addDays(m,7*30+5)),durationH:4,elevationFt:'',goal:'finish',priority:'B'},
-      {id:'ex3',name:'Local cross-country race',type:'mtb',date:dkey(addDays(m,7*24+6)),durationH:1.5,elevationFt:'',goal:'finish',priority:'C'},
+      {id:'ex2',name:'50-mile gravel race',type:'gravel50',date:dkey(addDays(m,7*30+5)),durationH:4,elevationFt:'',goal:'finish',priority:'B'},
+      {id:'ex3',name:'Local cross-country race',type:'xc',date:dkey(addDays(m,7*24+6)),durationH:1.5,elevationFt:'',goal:'finish',priority:'C'},
     ],
     changes:[{id:'exc1',from:dkey(addDays(m,7*20)),maxHours:11,days:[false,true,true,true,false,true,true],longDay:5,setting:'outdoor',label:'Summer'}],
     checkins:[]};
@@ -388,23 +388,59 @@ function migrateProfile(p){
   return p;
 }
 
+/* ============ event catalog ============ */
+/* [type, label, typical finish time (h), hint, discipline] */
+const EVENT_GROUPS=[
+ ['Mountain bike',[
+  ['xc','Cross-country (XC) race',1.5,'Usually 1–2 hours.','xc'],
+  ['mtb50','MTB 50-miler',5.5,'Usually 4–7 hours.','mtb'],
+  ['mtb','MTB 100-miler or marathon',10,'Usually 7–13 hours.','mtb'],
+  ['timed','Timed race: 6, 12 or 24 hours',6,'Enter the race length. On a relay team, enter your total riding time.','timed']]],
+ ['Gravel',[
+  ['gravel50','Gravel 50 miles',3.5,'Usually 2.5–5 hours.','gravel'],
+  ['gravel100','Gravel 100 miles',7,'Usually 5.5–10 hours.','gravel'],
+  ['gravel200','Gravel 200 miles',14,'Usually 11–20 hours.','gravel'],
+  ['gravel','Gravel, other distance',4,'Your best guess.','gravel']]],
+ ['Road',[
+  ['crit','Criterium',1,'Usually 30–75 minutes.','crit'],
+  ['roadrace','Road race',3,'Usually 1.5–4.5 hours.','roadrace'],
+  ['metric','Metric century (100 km)',3.5,'Usually 3–5 hours.','road'],
+  ['road','Century (100 miles) or gran fondo',6,'Usually 5–8 hours.','road'],
+  ['tt','Time trial or triathlon bike leg',1,'Your expected time.','tt'],
+  ['climb','Hill climb',1,'Your expected time.','climb'],
+  ['stage','Multi-day or stage event',5,'Enter your longest day.','stage']]],
+ ['Cyclocross',[
+  ['cx','Cyclocross race',0.75,'Usually 30–60 minutes.','cx']]],
+ ['Running',[
+  ['5k','5K',0.5,'Your expected time.','run'],
+  ['10k','10K',1,'Your expected time.','run'],
+  ['half','Half marathon',2.25,'Your expected time.','run'],
+  ['marathon','Marathon',4.5,'Your expected time. Used for fueling advice.','run'],
+  ['trail','Trail race or ultra',5,'Your expected time.','run']]],
+];
+const EVINFO=Object.fromEntries(EVENT_GROUPS.flatMap(([,list])=>list.map(([v,l,h,hint,disc])=>[v,{label:l,preset:h,hint,disc}])));
+const disc=ev=>(EVINFO[ev&&ev.type]||{disc:ev&&ev.type}).disc;
+const typeLabel=t=>(EVINFO[t]||{label:t}).label;
+
 /* ============ plan generator ============ */
 function eventFamily(ev){const d=+ev.durationH||3;return d>=4?'ultra':d>=1.5?'endurance':'short'}
 function keySessions(phase,prog,ev,fam){
-  const t=ev.type;
+  const t=disc(ev);
   if(phase==='base')return prog<0.4?['tempo','sprints']:['sweetspot','sprints'];
   if(phase==='build'){
     if(t==='tt')return ['threshold','vo2'];
     if(t==='climb')return ['climbs','vo2'];
-    if(t==='crit'||fam==='short')return ['vo2','anaerobic'];
+    if(t==='crit'||t==='cx'||fam==='short')return ['vo2','anaerobic'];
+    if(t==='xc')return ['vo2','climbs'];
+    if(t==='roadrace')return ['vo2','threshold'];
     if(t==='mtb')return ['climbs','vo2'];
     if(fam==='ultra')return ['threshold','vo2'];
     return ['vo2','threshold'];
   }
   if(phase==='peak'){
-    if(t==='crit'||fam==='short')return ['anaerobic','vo2'];
     if(t==='climb')return ['climbs','vo2'];
-    if(t==='tt')return ['racepace','vo2'];
+    if(t==='tt')return ['threshold','vo2'];
+    if(t==='crit'||t==='cx'||t==='roadrace'||t==='xc'||fam==='short')return ['anaerobic','vo2'];
     return fam==='ultra'?['vo2','racepace']:['racepace','vo2'];
   }
   return ['taperSharp'];
@@ -542,13 +578,13 @@ function buildWeek(p,wk,nextStr){
   }
   const rem=others.filter(d=>!hardDays.some(h=>h.d===d));
   const after=(longDay+1)%7;
-  const b2b=!wk.recovery&&wk.phase!=='taper'&&(fam==='ultra'||ev.type==='stage')&&(wk.phase==='peak'||(wk.phase==='build'&&wk.prog>0.45))&&rem.includes(after);
+  const b2b=!wk.recovery&&wk.phase!=='taper'&&(fam==='ultra'||disc(ev)==='stage')&&(wk.phase==='peak'||(wk.phase==='build'&&wk.prog>0.45))&&rem.includes(after);
   const recDay=!b2b&&D.length>=5&&rem.includes(after)?after:null;
   const endDays=rem.filter(d=>d!==after||(!b2b&&recDay==null));
   let skillsDay=null;
-  if((ev.type==='mtb'||ev.type==='gravel')&&av.setting!=='indoor'&&!wk.recovery&&(wk.phase==='base'||wk.phase==='build')&&endDays.length)skillsDay=endDays[0];
+  if(['mtb','xc','gravel','timed','cx'].includes(disc(ev))&&av.setting!=='indoor'&&!wk.recovery&&(wk.phase==='base'||wk.phase==='build')&&endDays.length)skillsDay=endDays[0];
   const hd=r25(clamp(wk.hours*0.15,0.75,1.5));
-  const longType=wk.phase==='peak'&&!wk.recovery&&fam!=='short'?'racesim':'long';
+  const longType=wk.phase==='peak'&&!wk.recovery&&fam!=='short'&&!['xc','crit','cx','tt','climb'].includes(disc(ev))?'racesim':'long';
   const ctx={phase:wk.phase,prog:wk.prog,fam,ev,setting:av.setting};
   const put=(d,type,h)=>days[d].items.push(makeRide(type,r25(h),ctx));
   put(longDay,longType,wk.long);
@@ -905,8 +941,13 @@ function eventTips(p,ev){
   }
   if(fam==='ultra')out.push({t:'Fueling is a skill you train',d:`For events over 2.5 hours, research supports 60–90 g of carbohydrate per hour, using mixed sugars (glucose plus fructose) at the high end. Start lower on long rides and build up so your gut adapts. Practice every long ride with the exact foods and drinks you will use on the day.`});
   else if(fam==='endurance')out.push({t:'Fueling',d:`For 1–2.5 hour efforts, 30–60 g of carbohydrate per hour is the usual target. Practice it on long rides and race simulations.`});
-  if(ev.type==='mtb'||ev.type==='gravel')out.push({t:'Skills and equipment',d:`Technical riding costs energy when you’re tense. The weekly skills ride and the Skills tab are part of the plan. Do your long rides on your race bike with race tires and pressures.`});
-  if(ev.type==='crit'||ev.type==='road')out.push({t:'Riding in a group',d:`Practice group riding before the event: hold your line, ride smoothly, and get comfortable close to other wheels. Drafting saves a large share of your energy.`});
+  const dd=disc(ev);
+  if(dd==='timed')out.push({t:'Timed races',d:`Pick an effort you can hold for the whole race and ride your laps at a steady pace; most riders slow down late because they started too fast. Plan quick pit stops with food, bottles and spare clothing laid out in order.${+ev.durationH>=12?' Racing through the night means practicing with your lights on a few training rides, packing warm layers, and deciding ahead of time whether you will stop to sleep.':''} On a relay team, eat and drink right after each lap and stay warm between them.`});
+  if(dd==='cx')out.push({t:'Cyclocross skills',d:'Cyclocross rewards skills as much as fitness. Use the weekly skills ride to practice dismounts and remounts, shouldering the bike over barriers, run-ups, and cornering on grass or mud. Starts are fast: practice hard 30-second efforts from a standstill.'});
+  if(dd==='roadrace')out.push({t:'Racing in a bunch',d:'Road races are decided by surges: attacks, climbs and the sprint. The harder interval sessions in your plan build that repeat punch. Stay near the front third, out of the wind, and save your efforts for the moments that matter.'});
+  if(dd==='xc')out.push({t:'Cross-country racing',d:'XC races start fast and stay hard, with repeated short climbs. Your build and peak phases focus on short, hard intervals to match. Pre-ride the course if you can, and practice a hard first five minutes so the start doesn’t surprise you.'});
+  if(['mtb','xc','gravel','timed'].includes(dd))out.push({t:'Skills and equipment',d:`Technical riding costs energy when you’re tense. The weekly skills ride and the Skills tab are part of the plan. Do your long rides on your race bike with race tires and pressures.`});
+  if(['crit','road','roadrace'].includes(dd))out.push({t:'Riding in a group',d:`Practice group riding before the event: hold your line, ride smoothly, and get comfortable close to other wheels. Drafting saves a large share of your energy.`});
   if(fam==='ultra')out.push({t:'Pacing and cutoffs',d:`Most long-event mistakes happen in the first hour. Ride the opening at endurance effort even when others go faster. If the event has time cutoffs, work out the pace you need for each checkpoint and carry it on your top tube.`});
   if(+p.age>=50)out.push({t:'Recovery for masters riders',d:`Your plan uses a lighter week every third week instead of every fourth, keeps some high-intensity work year-round, and keeps strength training in every phase. Sleep and protein (about 1.6 g per kg of body weight per day, spread across meals) matter more with age.`});
   return out;
@@ -1061,7 +1102,7 @@ function vPlan(){
   if(curI>=0)h+=`<i class="now" style="left:calc(${((curI+0.5)/N*100).toFixed(2)}% - 1px)" title="This week"></i>`;
   h+=`</div><div class="legend"><span><i class="ph-base"></i>Base: aerobic foundation, heavy strength</span><span><i class="ph-build"></i>Build: harder intervals</span><span><i class="ph-peak"></i>Peak: race-specific</span><span><i class="ph-taper"></i>Taper: freshen up</span>${segs.some(g=>g.ph==='recover')?'<span><i class="ph-recover"></i>Recover after an A race</span>':''}</div></div>`;
   h+=`<div class="card"><div class="row" style="justify-content:space-between"><div class="eyebrow">Race schedule</div><a class="small" href="#setup">Edit races</a></div>
-    <div class="sched">${evs.map(e=>{const wk=Math.round((monday(e.d)-monday(t))/(7*864e5));return `<div class="sched-row"><div class="sched-when"><span class="mono">${fmtShort(e.d)}</span><span class="small muted">${e.d<t?'done':wk<=0?'this week':wk+' wk'}</span></div><div style="min-width:0"><div class="row" style="gap:8px"><b>${esc(e.name)}</b>${prioChip(e.priority)}</div><div class="target">${esc(PRIO[e.priority])}</div></div></div>`}).join('')}</div></div>`;
+    <div class="sched">${evs.map(e=>{const wk=Math.round((monday(e.d)-monday(t))/(7*864e5));return `<div class="sched-row"><div class="sched-when"><span class="mono">${fmtShort(e.d)}</span><span class="small muted">${e.d<t?'done':wk<=0?'this week':wk+' wk'}</span></div><div style="min-width:0"><div class="row" style="gap:8px"><b>${esc(e.name)}</b>${prioChip(e.priority)}</div><div class="target">${esc(typeLabel(e.type))}${e.durationH?` · about ${fmtH(+e.durationH)}`:''}. ${esc(PRIO[e.priority])}</div></div></div>`}).join('')}</div></div>`;
   const chs=(p.changes||[]).slice().sort((a,b)=>a.from<b.from?-1:1);
   const setL={indoor:'mostly indoors',outdoor:'mostly outdoors',mixed:'indoors and out'};
   h+=`<div class="card"><div class="row" style="justify-content:space-between"><div class="eyebrow">Schedule and check-ins</div><a class="btn small" href="#checkin">Check in now</a></div>
@@ -1199,16 +1240,14 @@ function vScience(){
   <div class="banner"><span><b>Not medical advice.</b> This is general training guidance. Check with a doctor before starting a new training program, especially if you are over 40, new to exercise, or have a heart, lung or other health condition. Stop and get help for chest pain, dizziness or unusual breathlessness.</span></div></section>`;
 }
 let blockSeq=0;
-const EVTYPES=[['mtb','Mountain bike (marathon / 100-mile)'],['gravel','Gravel'],['road','Road: century or gran fondo'],['crit','Criterium or short circuit race'],['tt','Time trial / triathlon bike'],['climb','Hill climb'],['stage','Multi-day or stage event']];
-const RUNTYPES=[['5k','5K'],['10k','10K'],['half','Half marathon'],['marathon','Marathon'],['trail','Trail race or ultra']];
 function evBlock(ev){
   const n=blockSeq++;ev=ev||{};
   return `<div class="sub" data-ev="${n}" data-id="${esc(ev.id||'')}"><div class="row" style="justify-content:space-between"><b>Event</b><button type="button" class="btn small" data-act="rm-block">Remove</button></div><div class="grid2" style="margin-top:10px">
    <label class="f" for="f-ev-name-${n}">Event name<input type="text" id="f-ev-name-${n}" value="${esc(ev.name)}" placeholder="e.g. Gran fondo, 100-mile MTB race"></label>
    <label class="f" for="f-ev-date-${n}">Date<input type="date" id="f-ev-date-${n}" value="${esc(ev.date)}"></label>
    <label class="f" for="f-ev-prio-${n}">Priority<select id="f-ev-prio-${n}">${selOpt('A',ev.priority||'A','A: main goal, full peak and taper')}${selOpt('B',ev.priority,'B: important, short taper')}${selOpt('C',ev.priority,'C: training race')}</select></label>
-   <label class="f" for="f-ev-type-${n}">Type of event<select id="f-ev-type-${n}"><optgroup label="Cycling">${EVTYPES.map(([v,l])=>selOpt(v,ev.type,l)).join('')}</optgroup><optgroup label="Running">${RUNTYPES.map(([v,l])=>selOpt(v,ev.type,l)).join('')}</optgroup></select></label>
-   <label class="f" for="f-ev-dur-${n}">Expected finish time (hours)<span class="hint">For multi-day events, the longest day.</span><input type="number" id="f-ev-dur-${n}" min="0.25" max="30" step="0.25" value="${esc(ev.durationH||'')}"></label>
+   <label class="f" for="f-ev-type-${n}">Type of event<select id="f-ev-type-${n}" data-act="evtype" data-n="${n}">${EVENT_GROUPS.map(([g,list])=>`<optgroup label="${g}">${list.map(([v,l])=>selOpt(v,ev.type,l)).join('')}</optgroup>`).join('')}</select></label>
+   <label class="f" for="f-ev-dur-${n}">Expected finish time (hours)<span class="hint" id="f-ev-hint-${n}">${esc((EVINFO[ev.type||'road']||{}).hint||'')} Decimals are fine: 1.5 = 1 h 30 min.</span><input type="number" id="f-ev-dur-${n}" min="0.25" max="48" step="0.25" value="${esc(ev.durationH||(EVINFO[ev.type||'road']||{}).preset||'')}" ${ev.durationH?'':'data-auto="1"'}></label>
    <label class="f" for="f-ev-elev-${n}">Highest elevation (ft)<span class="hint">Optional. Altitude advice above 5,000 ft.</span><input type="number" id="f-ev-elev-${n}" min="0" max="20000" step="100" value="${esc(ev.elevationFt)}"></label>
    <label class="f" for="f-ev-goal-${n}">Goal<select id="f-ev-goal-${n}">${selOpt('finish',ev.goal,'Finish strong')}${selOpt('time',ev.goal,'Hit a time goal')}${selOpt('compete',ev.goal,'Compete for placing')}</select></label>
   </div></div>`;
@@ -1570,7 +1609,7 @@ document.addEventListener('click',e=>{
   else if(a==='play'){const id=t.dataset.id;if(!/^[\w-]{6,20}$/.test(id))return;const st=+t.dataset.start||0;const f=document.createElement('iframe');f.src=`https://www.youtube-nocookie.com/embed/${id}?autoplay=1&rel=0&playsinline=1${st?'&start='+st:''}`;f.title=t.dataset.title||'Video';f.allow='accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share';f.allowFullscreen=true;f.referrerPolicy='strict-origin-when-cross-origin';t.replaceWith(f)}
   else if(a==='file'){const f=findDay(t.dataset.k);const it=f&&f.day.items[+t.dataset.i];const fmt=t.dataset.fmt;if(!it||it.kind!==(fmt==='garmin'?'run':'ride'))return;const fl=deviceFile(it,f.day.date,fmt);deliverFiles([fl],fl.name.replace(/\.(zwo|fit)$/,`-${FMTN[fmt]}.zip`))}
   else if(a==='weekfiles'){const w=state.plan.weeks[+t.dataset.w];if(!w)return;const fmt=t.dataset.fmt,kind=fmt==='garmin'?'run':'ride';const files=w.days.flatMap(d=>d.items.filter(x=>x.kind===kind).map(x=>deviceFile(x,d.date,fmt)));if(!files.length){toast(kind==='run'?'No runs this week.':'No rides this week.');return}deliverFiles(files,`wattfire-week-${w.i+1}-${FMTN[fmt]}.zip`)}
-  else if(a==='add-ev'){document.getElementById('ev-list').insertAdjacentHTML('beforeend',evBlock({priority:'B',type:'road'}))}
+  else if(a==='add-ev'){document.getElementById('ev-list').insertAdjacentHTML('beforeend',evBlock({priority:'B',type:'gravel50'}))}
   else if(a==='add-chg'){const nm=addDays(monday(today()),7);document.getElementById('chg-list').insertAdjacentHTML('beforeend',chgBlock({from:dkey(nm),setting:'outdoor',maxHours:+(P().maxHours)||6,days:P().days,longDay:P().longDay}))}
   else if(a==='rm-block'){const b=t.closest('.sub');if(b)b.remove()}
   else if(a==='exf'){state.exFilter=t.dataset.f;render()}
@@ -1584,12 +1623,16 @@ document.addEventListener('click',e=>{
 });
 document.addEventListener('change',e=>{
   const t=e.target;
+  if(t.dataset&&t.dataset.act==='evtype'){const n=t.dataset.n,info=EVINFO[t.value]||{},dur=document.getElementById('f-ev-dur-'+n),hint=document.getElementById('f-ev-hint-'+n);
+    if(hint)hint.textContent=`${info.hint||''} Decimals are fine: 1.5 = 1 h 30 min.`;
+    if(dur&&(dur.dataset.auto==='1'||!dur.value)&&info.preset){dur.value=info.preset;dur.dataset.auto='1'}}
   if(t.id==='f-ci-chg'){document.getElementById('ci-chg-fields').hidden=!t.checked}
   if(t.dataset&&t.dataset.act==='done'){if(t.checked)state.store.done[t.dataset.k]=true;else delete state.store.done[t.dataset.k];if(!state.example)saveStore();render()}
   if(t.id==='f-load'&&t.files&&t.files[0]){
     const r=new FileReader();r.onload=()=>{try{const j=JSON.parse(r.result);if(!j.profile||!(j.profile.event||j.profile.events))throw 0;migrateProfile(j.profile);state.store={profile:j.profile,done:j.done||{},example:false};state.example=false;state.plan=generatePlan(j.profile);saveStore();toast('Details loaded');location.hash='#today';render(true)}catch(_){toast('That file isn’t a WattFire details file.')}};r.readAsText(t.files[0]);
   }
 });
+document.addEventListener('input',e=>{const t=e.target;if(t.id&&t.id.startsWith('f-ev-dur-'))delete t.dataset.auto});
 document.addEventListener('submit',e=>{
   if(e.target.id==='checkin-form'){e.preventDefault();submitCheckin();return}
   if(e.target.id!=='setup-form')return;e.preventDefault();
