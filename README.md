@@ -5,7 +5,7 @@ A cycling training planner for any event. A rider enters their details (age, exp
 ## Features
 - **Today:** the day's workout with power, heart rate and effort targets, an interval chart, and step-by-step instructions
 - **Plan:** phase timeline, personal training zones, event-specific advice, and every week of the plan
-- **Downloads:** the full plan as a PDF, and a calendar file for Google Calendar
+- **Downloads:** the full plan as a PDF, a calendar file for Google Calendar, and structured workout files for Zwift (.zwo) and Wahoo ELEMNT (.fit), per day or per week, with an in-app guide to loading them
 - **Gym:** strength exercises with gym and home versions, form cues, and GCN / GTN video links
 - **Skills:** bike fit, pedaling, climbing, descending, trail skills, fueling, altitude, pacing, recovery
 - **Science:** the research and coaching sources behind each rule in the plan generator

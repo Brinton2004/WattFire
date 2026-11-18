@@ -4,6 +4,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500&display=swap">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <style>
 /* Layout: one-column training log. Sticky header + tab bar; a day card is the hero; zone colors are the only loud color. */
 :root{
@@ -160,6 +161,10 @@ input[type=text],input[type=number],input[type=date],select{font:inherit;font-we
 .days label{display:flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:8px;padding:7px 10px;cursor:pointer;font-weight:600;font-size:.88rem;background:var(--bg)}
 .days input{accent-color:var(--accent)}
 .err{color:var(--z6);font-weight:600}
+.devrow{margin-top:16px;padding-top:14px;border-top:1px solid var(--line)}
+.wk-files{display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding-top:10px;border-top:1px solid var(--line)}
+ol.how{margin:6px 0 0;padding-left:22px;display:flex;flex-direction:column;gap:6px;max-width:68ch}
+.path{font-family:var(--f-mono);font-size:.85rem;background:var(--sunk);padding:1px 6px;border-radius:4px;overflow-wrap:anywhere}
 .vids{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,260px),1fr));gap:12px;margin-top:12px}
 .vid{margin:0;min-width:0}
 .vid-play{position:relative;display:block;width:100%;max-width:100%;aspect-ratio:16/9;border:0;padding:0;border-radius:8px;overflow:hidden;background:var(--sunk);cursor:pointer}
@@ -546,7 +551,7 @@ function buildSteps(type,hours,ctx){
     case 'threshold':structured(()=>{if(pr<0.34)reps(4,8,'Z4',4);else if(pr<0.67)reps(3,12,'Z4',5);else reps(2,20,'Z4',8)});break;
     case 'vo2':structured(()=>{
       if(pr<0.34)reps(5,3,'Z5',3);
-      else if(pr<0.67){for(let s=0;s<3;s++){add(7.5,'Z5','10 × (30 s hard / 15 s easy)');if(s<2)add(3,'Z1','Easy spin')}}
+      else if(pr<0.67){for(let s=0;s<3;s++){S.push({min:7.5,z:'Z5',label:'10 × (30 s hard / 15 s easy)',rep:{n:10,on:0.5,off:0.25,offZ:'Z1'}});if(s<2)add(3,'Z1','Easy spin')}}
       else reps(5,4,'Z5',4);
     });break;
     case 'climbs':structured(()=>reps(pr<0.5?4:5,pr<0.5?6:8,'Z4',4,'Climb: seated, stand 30–60 s every few minutes'));break;
@@ -677,7 +682,9 @@ function itemCard(it,day,week,isToday,idx){
     ${profileBars(it.steps)}
     <table class="steps"><tbody>${it.steps.map(s=>`<tr class="z${s.z}"><td>${fmtMin(s.min)}</td><td class="sw"><span></span></td><td>${esc(s.label)}<div class="target">${esc(s.z==='SS'?'Sweet spot':s.z+' '+Z(s.z).name)} · ${esc(targetStr(s.z,p))}</div></td></tr>`).join('')}</tbody></table>
     <div class="cols" style="margin-top:16px"><div><div class="eyebrow">Why this workout</div><p style="margin-top:4px">${esc(it.purpose)}</p></div>
-    <div><div class="eyebrow">Tips</div><ul class="tips">${it.tips.map(t=>`<li>${esc(t)}</li>`).join('')}</ul></div></div>${videoBlock('ride:'+it.type)}</section>`;
+    <div><div class="eyebrow">Tips</div><ul class="tips">${it.tips.map(t=>`<li>${esc(t)}</li>`).join('')}</ul></div></div>
+    <div class="devrow"><div class="eyebrow">Ride it on Zwift or a Wahoo</div><div class="row" style="margin-top:6px"><button class="btn" data-act="file" data-fmt="zwo" data-k="${k}" data-i="${idx}">Zwift file (.zwo)</button><button class="btn" data-act="file" data-fmt="fit" data-k="${k}" data-i="${idx}">Wahoo file (.fit)</button><a class="small" href="#devices">How to load these</a></div></div>
+    ${videoBlock('ride:'+it.type)}</section>`;
 }
 function exampleBanner(){
   if(!state.example)return '';
@@ -697,7 +704,7 @@ function vPlan(){
   if(curI>=0)h+=`<i class="now" style="left:calc(${((curI+0.5)/N*100).toFixed(2)}% - 1px)" title="This week"></i>`;
   h+=`</div><div class="legend"><span><i class="ph-base"></i>Base: aerobic foundation, heavy strength</span><span><i class="ph-build"></i>Build: harder intervals</span><span><i class="ph-peak"></i>Peak: race-specific</span><span><i class="ph-taper"></i>Taper: freshen up</span></div></div>`;
   h+=pl.notes.map(n=>`<div class="banner"><span>${esc(n)}</span></div>`).join('');
-  h+=`<div class="card"><div class="row" style="justify-content:space-between"><div><div class="eyebrow">Take it with you</div><p class="small muted" style="margin-top:4px">PDF to print or keep on your phone. Calendar file imports into Google Calendar (Settings → Import).</p></div>
+  h+=`<div class="card"><div class="row" style="justify-content:space-between"><div><div class="eyebrow">Take it with you</div><p class="small muted" style="margin-top:4px">PDF to print or keep on your phone. Calendar file imports into Google Calendar (Settings → Import). Zwift and Wahoo workout files are on each day’s workout and each week below. <a href="#devices">How to load them</a>.</p></div>
     <div class="row" id="dl-row"><button class="btn primary" data-act="pdf">Download PDF</button><button class="btn" data-act="csv">Calendar file (.csv)</button></div></div><p class="small muted" id="dl-note" hidden style="margin-top:8px">Downloads aren’t available in this view. Open the page in a browser to save files.</p></div>`;
   h+=zonesCard();
   const tips=eventTips(p);
@@ -707,7 +714,8 @@ function vPlan(){
     const ph=w.isRace?'taper':w.phase;
     h+=`<details class="week" ${i===curI||(curI<0&&i===0)?'open':''}><summary><span class="wk-n mono">${i+1}</span><span class="wk-meta"><b>${phaseName(w)}</b><span class="d"> · ${fmtShort(w.start)}–${fmtShort(addDays(w.start,6))} · ${fmtH(w.total)} riding</span></span>
       <span class="wk-bars" aria-hidden="true">${w.days.map(d=>{const r=d.items.filter(x=>x.kind==='ride').reduce((a,x)=>a+x.hours,0);const z=dayZone(d);return `<i class="z${z}" style="--h:${z==='RACE'?100:z==='REST'?8:z==='GYM'?14:Math.max(14,Math.round(r/Math.max(1,peakH*0.45)*100))}%"></i>`}).join('')}</span></summary>
-      <div class="wk-days">${w.days.map(d=>{const k=dkey(d.date);return `<div class="wk-day ${k===dkey(t)?'today':''}"><span class="when">${fmtD(d.date)}</span><span>${d.items.some(x=>x.kind!=='rest')?`<button data-act="goto" data-k="${k}">${esc(dayLabel(d))}</button>`:`<span class="muted">${esc(dayLabel(d))}</span>`}</span><span class="small">${state.store.done[k]?'✓':''}</span></div>`}).join('')}</div></details>`;
+      <div class="wk-days">${w.days.map(d=>{const k=dkey(d.date);return `<div class="wk-day ${k===dkey(t)?'today':''}"><span class="when">${fmtD(d.date)}</span><span>${d.items.some(x=>x.kind!=='rest')?`<button data-act="goto" data-k="${k}">${esc(dayLabel(d))}</button>`:`<span class="muted">${esc(dayLabel(d))}</span>`}</span><span class="small">${state.store.done[k]?'✓':''}</span></div>`}).join('')}
+      ${w.days.some(d=>d.items.some(x=>x.kind==='ride'))?`<div class="wk-files"><span class="small muted">This week’s rides:</span><button class="btn small" data-act="weekfiles" data-w="${i}" data-fmt="zwo">Zwift files</button><button class="btn small" data-act="weekfiles" data-w="${i}" data-fmt="fit">Wahoo files</button></div>`:''}</div></details>`;
   });
   h+=`</div></section>`;
   return h;
@@ -895,6 +903,66 @@ function makePDF(){
   y+=8;line('General training guidance, not medical advice. Check with a doctor before starting a new program.',8,'italic',3,[90,100,95]);
   return doc.output('blob');
 }
+/* ============ device workout files ============ */
+const ZPCT={Z1:[0.45,0.55],Z2:[0.60,0.72],Z3:[0.78,0.86],SS:[0.88,0.93],Z4:[0.95,1.02],Z5:[1.08,1.18],Z6:[1.25,1.45],Z7:[1.5,2.0]};
+const zMid=z=>{const r=ZPCT[z]||ZPCT.Z2;return (r[0]+r[1])/2};
+const ascii=s=>pdfSafe(s).replace(/[–—]/g,'-').replace(/×/g,'x').normalize('NFKD').replace(/[^\x20-\x7E]/g,'');
+const slug=s=>ascii(s).toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
+function expandSteps(steps){
+  const out=[];
+  for(const s of steps){
+    if(s.rep){for(let k=0;k<s.rep.n;k++){out.push({sec:Math.round(s.rep.on*60),z:s.z,label:'Hard',kind:'active'});out.push({sec:Math.round(s.rep.off*60),z:s.rep.offZ||'Z1',label:'Easy',kind:'rest'})}continue}
+    const kind=/^warm/i.test(s.label)?'warmup':/^cool/i.test(s.label)?'cooldown':(s.z==='Z1'&&/easy spin/i.test(s.label))?'rest':'active';
+    out.push({sec:Math.max(5,Math.round(s.min*60)),z:s.z,label:s.label,kind});
+  }
+  return out;
+}
+const xmlEsc=s=>String(s).replace(/[<>&"']/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;',"'":'&apos;'}[c]));
+const wktName=(it,date)=>`${dkey(date)} ${ascii(it.title)}`;
+function makeZWO(it,date){
+  const f=n=>n.toFixed(2);
+  const body=expandSteps(it.steps).map(s=>{
+    const msg=`<textevent timeoffset="0" message="${xmlEsc(ascii(s.label))}"/>`;
+    if(s.kind==='warmup')return `    <Warmup Duration="${s.sec}" PowerLow="0.45" PowerHigh="0.70">${msg}</Warmup>`;
+    if(s.kind==='cooldown')return `    <Cooldown Duration="${s.sec}" PowerLow="0.60" PowerHigh="0.40">${msg}</Cooldown>`;
+    if(s.z==='Z7')return `    <FreeRide Duration="${s.sec}">${msg}</FreeRide>`;
+    return `    <SteadyState Duration="${s.sec}" Power="${f(zMid(s.z))}">${msg}</SteadyState>`;
+  }).join('\n');
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<workout_file>\n  <author>WattFire</author>\n  <name>${xmlEsc(wktName(it,date))}</name>\n  <description>${xmlEsc(ascii(it.purpose))}</description>\n  <sportType>bike</sportType>\n  <category>WattFire</category>\n  <tags/>\n  <workout>\n${body}\n  </workout>\n</workout_file>\n`;
+}
+const FIT_CRC=[0x0000,0xCC01,0xD801,0x1400,0xF001,0x3C00,0x2800,0xE401,0xA001,0x6C00,0x7800,0xB401,0x5000,0x9C01,0x8801,0x4400];
+function fitCrc(bytes,crc=0){for(const b of bytes){let t=FIT_CRC[crc&0xF];crc=(crc>>4)&0x0FFF;crc=crc^t^FIT_CRC[b&0xF];t=FIT_CRC[crc&0xF];crc=(crc>>4)&0x0FFF;crc=crc^t^FIT_CRC[(b>>4)&0xF]}return crc}
+function makeFIT(it,date,p){
+  const ex=expandSteps(it.steps),ftp=+p.ftp,B=[];
+  const u8=v=>B.push(v&255),u16=v=>{u8(v);u8(v>>8)},u32=v=>{u16(v&0xFFFF);u16(v>>>16)};
+  const str=(s,n)=>{const e=new TextEncoder().encode(ascii(s));for(let i=0;i<n;i++)u8(i<n-1&&i<e.length?e[i]:0)};
+  const def=(local,gnum,fields)=>{u8(0x40|local);u8(0);u8(0);u16(gnum);u8(fields.length);for(const [n,sz,t] of fields){u8(n);u8(sz);u8(t)}};
+  def(0,0,[[0,1,0x00],[1,2,0x84],[2,2,0x84],[3,4,0x8C],[4,4,0x86]]);
+  u8(0);u8(5);u16(255);u16(0);u32(1+Math.floor(Math.random()*0x7FFFFFFE));u32(Math.floor(Date.now()/1000)-631065600);
+  def(1,26,[[8,40,0x07],[4,1,0x00],[6,2,0x84]]);
+  u8(1);str(wktName(it,date),40);u8(2);u16(ex.length);
+  def(2,27,[[254,2,0x84],[0,32,0x07],[1,1,0x00],[2,4,0x86],[3,1,0x00],[4,4,0x86],[5,4,0x86],[6,4,0x86],[7,1,0x00]]);
+  ex.forEach((s,i)=>{
+    u8(2);u16(i);str(s.label,32);u8(0);u32(s.sec*1000);
+    const r=ZPCT[s.z]||ZPCT.Z2;let tt=4,lo,hi;
+    if(s.z==='Z7'){tt=2;lo=0;hi=0}
+    else if(ftp){lo=Math.round(ftp*r[0])+1000;hi=Math.round(ftp*r[1])+1000}
+    else{lo=Math.round(r[0]*100);hi=Math.round(r[1]*100)}
+    u8(tt);u32(0);u32(lo);u32(hi);u8({active:0,rest:1,warmup:2,cooldown:3}[s.kind]);
+  });
+  const data=Uint8Array.from(B),h=new Uint8Array(14),dv=new DataView(h.buffer);
+  h[0]=14;h[1]=0x10;dv.setUint16(2,2132,true);dv.setUint32(4,data.length,true);h.set([46,70,73,84],8);dv.setUint16(12,fitCrc(h.subarray(0,12)),true);
+  const crc=fitCrc(data,fitCrc(h)),out=new Uint8Array(16+data.length);
+  out.set(h);out.set(data,14);out[out.length-2]=crc&255;out[out.length-1]=crc>>8;
+  return out;
+}
+const deviceFile=(it,date,fmt)=>({name:`${dkey(date)}-${slug(it.title)}.${fmt}`,data:fmt==='zwo'?makeZWO(it,date):makeFIT(it,date,P())});
+async function deliverFiles(files,zipName){
+  if(files.length===1&&!state.inClaude)return offer(files[0].name,files[0].data);
+  if(!window.JSZip){toast('Couldn’t load the zip tool. Check your connection and try again.');return}
+  const z=new JSZip();files.forEach(f=>z.file(f.name,f.data));
+  offer(zipName,await z.generateAsync({type:'blob'}));
+}
 async function offer(filename,data){
   const dl=state.downloads;
   if(!dl&&!state.inClaude){const blob=data instanceof Blob?data:new Blob([data]);const u=URL.createObjectURL(blob);const a=document.createElement('a');a.href=u;a.download=filename;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),2000);return}
@@ -903,7 +971,42 @@ async function offer(filename,data){
 }
 
 /* ============ router + events ============ */
-const VIEWS={today:vToday,plan:vPlan,strength:vStrength,technique:vTechnique,science:vScience,setup:vSetup};
+function vDevices(){
+  const p=P();
+  return `<section class="stack"><div><div class="eyebrow">Workout files</div><h1 style="margin-top:4px">Ride your plan on Zwift or a Wahoo</h1>
+  <p style="margin-top:8px;max-width:68ch">Every ride in your plan can be downloaded as a workout file, one day at a time from the Today screen or a whole week at a time from the Plan screen. Your trainer or bike computer then shows each interval and its target as you ride.</p>
+  <p class="small muted" style="margin-top:6px;max-width:68ch">${+p.ftp?`Wahoo files use watts from your FTP of ${+p.ftp} W. If you retest, update your FTP in Setup and download again.`:'You haven’t entered an FTP, so Wahoo files use percentages of the FTP set on your Wahoo. Zwift always uses the FTP in your Zwift profile.'} Sprints are left as free efforts with no power target.</p></div>
+  <div class="card"><h2>Zwift</h2><p class="muted small" style="margin-top:4px">Uses the <b>Zwift file (.zwo)</b>. Files are added on a computer; Zwift then syncs them to your account.</p>
+  <ol class="how">
+   <li>Download the Zwift file for a day, or a week’s files. A week downloads as a .zip: double-click it to unzip.</li>
+   <li>On a Windows PC or Mac, open your <span class="path">Documents</span> folder, then <span class="path">Zwift</span> → <span class="path">Workouts</span>.</li>
+   <li>Open the folder named with a long number (your Zwift ID). If it isn’t there, open Zwift once, log in, and close it.</li>
+   <li>Copy the .zwo files into that numbered folder.</li>
+   <li>Start Zwift and go to <b>Workouts</b>. Your rides are under <b>Custom Workouts</b>, grouped as <b>WattFire</b> and named by date.</li>
+  </ol>
+  <p class="small" style="margin-top:10px"><b>iPad, iPhone, Android or Apple TV:</b> these can’t add files directly. Add them on a computer once as above; according to Zwift, imported workouts then appear on your other devices after Zwift restarts.</p></div>
+  <div class="card"><h2>Wahoo ELEMNT bike computers</h2><p class="muted small" style="margin-top:4px">Uses the <b>Wahoo file (.fit)</b>. Pick the option that matches your device.</p>
+  <h3 style="margin-top:14px">Option 1: USB cable (ELEMNT ACE, BOLT 3 and ROAM 3)</h3>
+  <ol class="how">
+   <li>Download the Wahoo files and unzip if needed.</li>
+   <li>Connect the ELEMNT to your computer with its USB cable.</li>
+   <li>Open the device’s storage and find the <span class="path">plans</span> folder.</li>
+   <li>Copy the .fit files into <span class="path">plans</span>, then eject the device.</li>
+   <li>On the ELEMNT, open planned workouts to find them.</li>
+  </ol>
+  <p class="small muted" style="margin-top:6px">If your computer doesn’t show the device, follow <a href="https://support.wahoofitness.com/hc/en-us/articles/28544587410450-Connect-an-ACE-BOLT-3-and-ROAM-3-to-a-desktop-laptop-computer" target="_blank" rel="noopener">Wahoo’s guide to connecting to a computer ↗</a>.</p>
+  <h3 style="margin-top:14px">Option 2: intervals.icu (any ELEMNT, no cable)</h3>
+  <ol class="how">
+   <li>Create a free account at <a href="https://intervals.icu" target="_blank" rel="noopener">intervals.icu ↗</a>.</li>
+   <li>In <b>Settings → Connections</b>, connect Wahoo and allow it to write to your account. Turn on <b>Upload planned workouts</b> and choose <b>Ride</b> as the type.</li>
+   <li>Open the intervals.icu calendar and drag a .fit or .zwo file onto the day you’ll ride it.</li>
+   <li>Open the ELEMNT app on your phone and sync. The workout appears in the ELEMNT’s planned workouts.</li>
+  </ol>
+  <p class="small muted" style="margin-top:6px">If today’s workout doesn’t show up, give it a start time later than now in intervals.icu and sync again.</p></div>
+  <div class="card"><h2>Wahoo KICKR trainers</h2><p style="margin-top:6px;max-width:68ch">Ride the Zwift files in Zwift. Or load the Wahoo file on an ELEMNT as above, pair the ELEMNT with the KICKR, and it sets the resistance for each interval automatically.</p></div>
+  <p class="small muted">Instructions are based on Zwift, Wahoo and intervals.icu documentation and user forums. These apps change; if a step doesn’t match what you see, check their help pages.</p></section>`;
+}
+const VIEWS={devices:vDevices,today:vToday,plan:vPlan,strength:vStrength,technique:vTechnique,science:vScience,setup:vSetup};
 function header(){
   const pl=state.plan,p=P();const el=document.getElementById('countdown');
   if(pl&&!pl.error){const days=Math.round((pl.eventDate-today())/864e5);el.innerHTML=days>=0?`<strong>${days>=14?Math.floor(days/7)+' wk':days+' d'}</strong> to ${esc(p.event.name)}`:`${esc(p.event.name)} is done`}
@@ -925,6 +1028,8 @@ document.addEventListener('click',e=>{
   else if(a==='wk'){state.sel=dkey(addDays(parse(state.sel),+t.dataset.n));render()}
   else if(a==='goto'){state.sel=t.dataset.k;location.hash='#today'}
   else if(a==='play'){const id=t.dataset.id;if(!/^[\w-]{6,20}$/.test(id))return;const st=+t.dataset.start||0;const f=document.createElement('iframe');f.src=`https://www.youtube-nocookie.com/embed/${id}?autoplay=1&rel=0&playsinline=1${st?'&start='+st:''}`;f.title=t.dataset.title||'Video';f.allow='accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share';f.allowFullscreen=true;f.referrerPolicy='strict-origin-when-cross-origin';t.replaceWith(f)}
+  else if(a==='file'){const f=findDay(t.dataset.k);const it=f&&f.day.items[+t.dataset.i];if(!it||it.kind!=='ride')return;const fl=deviceFile(it,f.day.date,t.dataset.fmt);deliverFiles([fl],fl.name.replace(/\.(zwo|fit)$/,`-${t.dataset.fmt==='zwo'?'zwift':'wahoo'}.zip`))}
+  else if(a==='weekfiles'){const w=state.plan.weeks[+t.dataset.w];if(!w)return;const files=w.days.flatMap(d=>d.items.filter(x=>x.kind==='ride').map(x=>deviceFile(x,d.date,t.dataset.fmt)));if(!files.length){toast('No rides this week.');return}deliverFiles(files,`wattfire-week-${w.i+1}-${t.dataset.fmt==='zwo'?'zwift':'wahoo'}.zip`)}
   else if(a==='exf'){state.exFilter=t.dataset.f;render()}
   else if(a==='ex'){state.exFilter='all';location.hash='#strength';setTimeout(()=>{const el=document.getElementById('ex-'+t.dataset.x);if(el)el.scrollIntoView({block:'start'})},30)}
   else if(a==='pdf'){try{offer(`training-plan-${dkey(state.plan.eventDate)}.pdf`,makePDF())}catch(err){toast('Couldn’t build the PDF.')}}
