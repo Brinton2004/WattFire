@@ -1,8 +1,9 @@
 # WattFire Training Planner
 
-A cycling training planner for any event. A rider enters their details (age, experience, weekly hours, riding days, optional FTP and heart rate) and their event (type, date, expected finish time, elevation). The app builds a periodized plan: base, build, peak and taper.
+A cycling and running training planner for any event. A rider enters their details (age, experience, weekly hours, riding days, optional FTP and heart rate) and their event (type, date, expected finish time, elevation). The app builds a periodized plan: base, build, peak and taper.
 
 ## Features
+- **Running:** 5K to marathon and trail plans with pace targets from a recent race time, gradual mileage build, hill/threshold/interval sessions, race-pace long runs, and a 2–3 week marathon taper. Seasons can mix running and cycling races.
 - **Race schedule:** several events per season, each marked A (peak and taper), B (short taper) or C (training race)
 - **Seasons:** schedule changes with a start date, so hours, riding days and indoor/outdoor riding can change through the year
 - **Check-ins:** every two weeks the app asks how training feels, missed time, illness, new FTP and schedule changes, and adjusts the plan from the next Monday

@@ -21,6 +21,9 @@
     skill:fueling skill:altitude skill:pacing skill:recovery
     ride:endurance ride:long ride:tempo ride:sweetspot ride:threshold ride:vo2
     ride:climbs ride:anaerobic ride:sprints ride:skills ride:racesim
+    skill:runform skill:runinjury skill:marathon
+    run:easy run:long run:mplong run:strides run:hills run:threshold
+    run:intervals run:sharpen run:shakeout
 */
 window.WATTFIRE_VIDEOS = [
   // Found by web search; titles match GCN/GTN videos. Check each one plays the right video.
@@ -62,4 +65,13 @@ window.WATTFIRE_VIDEOS = [
   { for: 'ride:sweetspot', channel: '', title: '', url: '' },
   { for: 'ride:long',      channel: '', title: '', url: '' },
   { for: 'ride:skills',    channel: '', title: '', url: '' },
+
+  // Running (shown on that day's run and on the Skills tab)
+  { for: 'skill:runform',   channel: '', title: '', url: '' },
+  { for: 'skill:runinjury', channel: '', title: '', url: '' },
+  { for: 'skill:marathon',  channel: '', title: '', url: '' },
+  { for: 'run:hills',       channel: '', title: '', url: '' },
+  { for: 'run:threshold',   channel: '', title: '', url: '' },
+  { for: 'run:intervals',   channel: '', title: '', url: '' },
+  { for: 'run:strides',     channel: '', title: '', url: '' },
 ];

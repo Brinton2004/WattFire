@@ -92,6 +92,7 @@ main{padding-block:22px 110px}
 .steps{width:100%;border-collapse:collapse;margin-top:12px;font-size:.9rem}
 .steps td{padding:7px 6px;border-top:1px solid var(--line);vertical-align:top}
 .steps td:first-child{width:76px;font-family:var(--f-mono);font-variant-numeric:tabular-nums;white-space:nowrap}
+.steps.lift td:first-child{white-space:normal;width:34%;font-size:.82rem}
 .steps .sw{width:10px;padding-right:0}
 .steps .sw span{display:block;width:6px;height:18px;border-radius:2px;background:var(--zc)}
 .target{color:var(--muted);font-size:.82rem}
@@ -242,6 +243,7 @@ const r25=x=>Math.round(x*4)/4;
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function fmtH(h){const m=Math.round(h*60);const H=Math.floor(m/60),M=m%60;return H?(M?`${H}h${pad(M)}`:`${H}h`):`${M} min`}
 function fmtMin(min){if(min<1)return `${Math.round(min*60)} s`;if(min>=60)return fmtH(min/60);return `${Math.round(min*10)/10} min`}
+const isSess=x=>x.kind==='ride'||x.kind==='run';
 const today=()=>{const n=new Date();return new Date(n.getFullYear(),n.getMonth(),n.getDate())};
 
 /* ============ zones ============ */
@@ -343,7 +345,7 @@ const MOBILITY=[
 ];
 const SPRESC={
  AA:{name:'Foundation',sets:'2–3 sets × 12–15 reps',effort:'Moderate weight; stop with 3–4 reps left in the tank',rest:'60–90 s',note:'Learn each movement and build tendon tolerance before going heavy.'},
- MS:{name:'Max strength',sets:'3–4 sets × 4–6 reps',effort:'Heavy; stop with 1–2 good reps left',rest:'2–3 min',note:'The heavy phase. Studies showing benefits for cyclists used loads in this range. At home, use 3 × 8–12 slow reps with the hardest variation you can control. New to lifting? Use 3 × 6–8 and add weight gradually.'},
+ MS:{name:'Max strength',sets:'3–4 sets × 4–6 reps',effort:'Heavy; stop with 1–2 good reps left',rest:'2–3 min',note:'The heavy phase. Studies showing benefits for cyclists and runners used loads in this range. At home, use 3 × 8–12 slow reps with the hardest variation you can control. New to lifting? Use 3 × 6–8 and add weight gradually.'},
  MAINT:{name:'Maintenance',sets:'2–3 sets × 4–6 reps',effort:'Heavy but short; stop with 2 reps left',rest:'2–3 min',note:'One heavy session a week holds most of your strength gains while riding takes priority.'},
  LIGHT:{name:'Light',sets:'2 sets × 8–10 reps',effort:'Easy; 4+ reps left',rest:'60–90 s',note:'Recovery-week version. Move well, don’t chase fatigue.'},
 };
@@ -414,9 +416,9 @@ function normEvents(p){
   return evs;
 }
 function availAt(p,date){
-  let a={maxHours:+p.maxHours||6,days:p.days,longDay:+p.longDay,setting:p.setting||'mixed',label:''};
+  let a={maxHours:+p.maxHours||6,maxMiles:+(p.run&&p.run.maxMiles)||25,days:p.days,longDay:+p.longDay,setting:p.setting||'mixed',label:''};
   const ch=(p.changes||[]).filter(c=>c&&c.from).slice().sort((x,y)=>x.from<y.from?-1:x.from>y.from?1:0);
-  for(const c of ch)if(parse(c.from)<=date)a={maxHours:+c.maxHours||a.maxHours,days:Array.isArray(c.days)&&c.days.some(Boolean)?c.days:a.days,longDay:c.longDay!=null&&c.longDay!==''?+c.longDay:a.longDay,setting:c.setting||a.setting,label:c.label||''};
+  for(const c of ch)if(parse(c.from)<=date)a={maxHours:+c.maxHours||a.maxHours,maxMiles:+c.maxMiles||a.maxMiles,days:Array.isArray(c.days)&&c.days.some(Boolean)?c.days:a.days,longDay:c.longDay!=null&&c.longDay!==''?+c.longDay:a.longDay,setting:c.setting||a.setting,label:c.label||''};
   if(!a.days||!a.days.some(Boolean))a.days=[false,true,false,true,false,true,false];
   if(!a.days[a.longDay]){const l=[5,6,4,3,2,1,0].find(i=>a.days[i]);a.longDay=l==null?5:l}
   return a;
@@ -446,7 +448,8 @@ function generatePlan(p){
   for(const A of As){
     const aw=monday(A.d);if(aw<cycleStart)continue;
     const n=Math.round((aw-cycleStart)/(7*864e5))+1;
-    const c=buildCycle(p,cycleStart,n,A,carry,str,notes);
+    const run=isRun(A),sameSport=carry&&(carry.sport==='run')===run;
+    const c=run?buildRunCycle(p,cycleStart,n,A,sameSport?carry:null,str,notes):buildCycle(p,cycleStart,n,A,sameSport?carry:null,str,notes);
     weeks.push(...c.weeks);carry=c.carry;cycleStart=addDays(aw,7);
   }
   const k=(+p.age>=50||p.experience==='new')?3:4;
@@ -456,7 +459,7 @@ function generatePlan(p){
     if(w)overlayRace(p,w,e,weeks[w.i+1]);
     else if(e.d>addDays(weeks[weeks.length-1].start,6))notes.push(`${e.name||'An event'} is after your last A race, so it isn’t in the plan. Mark it as an A race to train for it.`);
   }
-  weeks.forEach(w=>{w.total=w.days.reduce((s,d)=>s+d.items.filter(x=>x.kind==='ride').reduce((a,x)=>a+x.hours,0),0)});
+  weeks.forEach(w=>{w.total=w.days.reduce((s,d)=>s+d.items.filter(x=>x.kind==='ride'||x.kind==='run').reduce((a,x)=>a+x.hours,0),0);w.miles=w.days.reduce((s,d)=>s+d.items.filter(x=>x.kind==='run').reduce((a,x)=>a+x.miles,0),0)});
   const t=today();
   const nextA=As.find(e=>e.d>=t)||lastA;
   return {weeks,start,eventDate:lastA.d,mainEvent:nextA,events:evs,N:weeks.length,notes,k};
@@ -507,13 +510,13 @@ function buildCycle(p,start,N,A,carry,str,notes){
     }
     if(av.setting==='indoor'&&long>2.5){long=2.5;indoorCapped=true}
     if(!isRace)maxLongHit=Math.max(maxLongHit,long);
-    const wk={phase,prog,recovery,isRace,hours,long,start:ws,fam,ev:A,avail:av,reset:ci.reset,first:!carry,li};
+    const wk={phase,prog,recovery,isRace,hours,long,start:ws,fam,ev:A,avail:av,reset:ci.reset,first:!carry,li,sport:'bike'};
     wk.days=isRace?raceWeek(p,wk,A):buildWeek(p,wk,()=>str.n++);
     out.push(wk);
   }
   if(fam==='ultra'&&maxLongHit<dur*0.55&&maxLongHit<5)notes.push(`For ${A.name||'your A race'}, your longest planned ride reaches about ${fmtH(maxLongHit)}. For a ${fmtH(dur)} event, more weekly hours${indoorCapped?' or more outdoor riding':''} would let long rides build further.`);
   if(indoorCapped)notes.push('Long rides are capped at 2.5 hours during indoor periods. Add a schedule change in Setup when you can ride outside, and long rides will grow again.');
-  return {weeks:out,carry:{load:lastLoad,long:lastLong}};
+  return {weeks:out,carry:{load:lastLoad,long:lastLong,sport:'bike'}};
 }
 function buildWeek(p,wk,nextStr){
   const ev=wk.ev,fam=wk.fam,av=wk.avail;
@@ -565,6 +568,12 @@ function buildWeek(p,wk,nextStr){
     if(rideTotal()<=wk.hours*1.08+0.1||rides<=3)break;
     days[d].items=days[d].items.filter(x=>x.kind!=='ride');rides--;
   }
+  assignStrength(p,wk,days,D,longDay,hardDays,b2bOn,after,nextStr);
+  days.forEach(d=>{if(!d.items.length)d.items.push({kind:'rest',title:'Rest day'})});
+  return days;
+}
+function assignStrength(p,wk,days,D,longDay,hardDays,b2bOn,after,nextStr){
+  const cd=(a,b)=>{const x=Math.abs(a-b);return Math.min(x,7-x)};
   if(p.strength!=='none'){
     let nS=wk.phase==='base'?2:wk.phase==='build'?(D.length>=5&&wk.prog<0.5?2:1):wk.phase==='peak'?1:0;
     if(wk.recovery)nS=wk.phase==='recover'?0:1;
@@ -587,8 +596,6 @@ function buildWeek(p,wk,nextStr){
       days[d].items.push({kind:'strength',stage,which,title:`Strength ${which==='MAINT'?'maintenance':which}`,minutes:stage==='LIGHT'?30:stage==='MAINT'?35:45});
     });
   }
-  days.forEach(d=>{if(!d.items.length)d.items.push({kind:'rest',title:'Rest day'})});
-  return days;
 }
 const raceItem=e=>({kind:'race',title:e.name||'Event day',hours:+e.durationH||3,ev:e,priority:e.priority||'A'});
 function raceWeek(p,wk,A){
@@ -610,24 +617,222 @@ function raceWeek(p,wk,A){
 }
 /* Fit a B or C race into an existing week. */
 function overlayRace(p,w,e,nextW){
-  const ei=di(e.d),days=w.days,D=w.avail.days;
-  const ctx={phase:w.phase,prog:w.prog,fam:w.fam,ev:w.ev,setting:w.avail.setting};
-  const isHard=it=>it.kind==='ride'&&!['endurance','recovery','b2b','skills','openers'].includes(it.type);
+  const ei=di(e.d),days=w.days,D=w.avail.days,run=w.sport==='run';
+  const ctx={phase:w.phase,prog:w.prog,fam:w.fam,ev:w.ev,setting:w.avail.setting,rp:w.rp};
+  const mk={
+    openers:()=>run?makeRun('shakeout',2.5,ctx):makeRide('openers',0.75,ctx),
+    sharp:()=>run?makeRun('sharpen',4,ctx):makeRide('taperSharp',1,ctx),
+    easy:x=>run?makeRun('easy',Math.min(4,x&&x.miles||4),ctx):makeRide('endurance',Math.min(1.25,x&&x.hours||1.25),ctx),
+    recovery:()=>run?makeRun('recovery',3,ctx):makeRide('recovery',0.75,ctx)};
+  const isLong=x=>['long','racesim','b2b','mplong'].includes(x.type);
+  const isHard=x=>isSess(x)&&!isLong(x)&&!['endurance','recovery','skills','openers','easy','strides','shakeout'].includes(x.type);
   days[ei].items=[raceItem(e)];
-  const long=+e.durationH>=2;
   if(e.priority==='B'){
-    if(ei>=1)days[ei-1].items=[makeRide('openers',0.75,ctx)];
+    if(ei>=1)days[ei-1].items=[mk.openers()];
     if(ei>=2)days[ei-2].items=[{kind:'rest',title:'Rest day',note:`Rest before ${e.name||'your race'}.`}];
-    for(let d=Math.max(0,ei-4);d<=ei-3;d++)days[d].items=days[d].items.filter(x=>x.kind!=='strength').map(x=>isHard(x)?makeRide('taperSharp',1,ctx):x.type==='long'||x.type==='racesim'?makeRide('endurance',1.25,ctx):x);
+    for(let d=Math.max(0,ei-4);d<=ei-3;d++)days[d].items=days[d].items.filter(x=>x.kind!=='strength').map(x=>isHard(x)?mk.sharp():isLong(x)?mk.easy():x);
     const after=ei<6?days[ei+1]:nextW?nextW.days[0]:null;
-    if(after)after.items=D[(ei+1)%7]?[makeRide('recovery',0.75,ctx)]:[{kind:'rest',title:'Recovery',note:'Rest after your race.'}];
-    if(ei<6&&ei+2<7)days[ei+2].items=days[ei+2].items.map(x=>isHard(x)?makeRide('endurance',1,ctx):x);
-  }else{
-    if(ei>=1)days[ei-1].items=days[ei-1].items.filter(x=>x.kind!=='strength').map(x=>isHard(x)||x.type==='long'||x.type==='racesim'?makeRide('endurance',Math.min(1,x.hours||1),ctx):x);
+    if(after)after.items=D[(ei+1)%7]?[mk.recovery()]:[{kind:'rest',title:'Recovery',note:'Rest after your race.'}];
+    if(ei+2<7)days[ei+2].items=days[ei+2].items.map(x=>isHard(x)?mk.easy():x);
+  }else if(ei>=1){
+    days[ei-1].items=days[ei-1].items.filter(x=>x.kind!=='strength').map(x=>isHard(x)||isLong(x)?mk.easy(x):x);
   }
-  if(long)for(let d=0;d<7;d++)if(d!==ei)days[d].items=days[d].items.map(x=>(x.type==='long'||x.type==='racesim'||x.type==='b2b')?makeRide('endurance',Math.min(1.5,x.hours),ctx):x);
+  if(+e.durationH>=2)for(let d=0;d<7;d++)if(d!==ei)days[d].items=days[d].items.map(x=>isLong(x)?mk.easy(x):x);
   days.forEach(d=>{if(!d.items.length)d.items.push({kind:'rest',title:'Rest day'})});
 }
+/* ============ running ============ */
+const RUN_TYPES={'5k':{n:'5K',mi:3.107},'10k':{n:'10K',mi:6.214},half:{n:'Half marathon',mi:13.109},marathon:{n:'Marathon',mi:26.219},trail:{n:'Trail race or ultra',mi:null}};
+const isRun=ev=>!!(ev&&RUN_TYPES[ev.type]);
+const RACE_M={'5k':5000,'10k':10000,half:21097.5,marathon:42195};
+function parseTime(s){if(!s)return 0;const a=String(s).trim().split(':').map(Number);if(!a.length||a.some(x=>isNaN(x)))return 0;return a.reduce((t,x)=>t*60+x,0)}
+function fmtHMS(sec){sec=Math.round(sec);const h=Math.floor(sec/3600),m=Math.floor(sec%3600/60),s=sec%60;return h?`${h}:${pad(m)}:${pad(s)}`:`${m}:${pad(s)}`}
+/* Threshold pace = pace you could race for ~60 min, from Riegel's formula T2 = T1 × (D2/D1)^1.06. */
+function runPaces(p){
+  const r=p.run||{},D=RACE_M[r.raceDist],T1=parseTime(r.raceTime);
+  if(!D||!T1||T1<540)return {T:540,M:583,have:false};
+  const d60=D*Math.pow(3600/T1,1/1.06),T=3600/(d60/1609.344);
+  const M=T1*Math.pow(42195/D,1.06)/26.219;
+  return {T,M,have:true};
+}
+const RUNZ={Z1:['Recovery',1.36,1.50,'Slower than easy'],Z2:['Easy',1.22,1.36,'Full sentences'],Z3:['Marathon pace',0,0,'Short sentences'],Z4:['Threshold',0.99,1.02,'A few words'],Z5:['Interval',0.92,0.95,'Can’t talk'],Z7:['Strides',0.86,0.89,'Fast, relaxed, 15–20 s']};
+const runZName=z=>(RUNZ[z]||RUNZ.Z2)[0];
+function paceRange(z,rp){if(z==='Z3')return [rp.M*0.99,rp.M*1.01];const r=RUNZ[z]||RUNZ.Z2;return [rp.T*r[1],rp.T*r[2]]}
+const paceMid=(z,rp)=>{const [a,b]=paceRange(z,rp);return (a+b)/2};
+const U=p=>(p.run&&p.run.units==='km')?'km':'mi';
+const toU=(mi,p)=>U(p)==='km'?mi*1.609344:mi;
+const fromU=(v,units)=>units==='km'?v/1.609344:v;
+const fmtDist=(mi,p)=>{const v=toU(mi,p);return `${v>=10?Math.round(v*2)/2:Math.round(v*10)/10} ${U(p)}`};
+const fmtPace=(sec,p)=>{const s=Math.round(U(p)==='km'?sec/1.609344:sec);return `${Math.floor(s/60)}:${pad(s%60)}`};
+function runTargetParts(z,p){
+  const rp=runPaces(p),out=[],zz=Z(z);
+  if(rp.have){const [a,b]=paceRange(z,rp);out.push(`${fmtPace(a,p)}–${fmtPace(b,p)} /${U(p)}`)}
+  const mh=hrMax(p);if(mh&&zz.m&&z!=='Z7')out.push(`${Math.round(mh.v*zz.m[0]/100)}–${Math.round(mh.v*zz.m[1]/100)} bpm${mh.est?' (est.)':''}`);
+  out.push(z==='Z7'?'RPE 8–9, relaxed':`RPE ${zz.rpe}`);
+  return out;
+}
+const RUN={
+ easy:{title:'Easy run',zone:'Z2',purpose:'Builds aerobic fitness and makes your legs durable. Most of your running should be at this relaxed, conversational pace.',tips:['If you can’t speak in full sentences, slow down, even if it feels too slow.','Short, quick, light steps. Let hills slow your pace instead of raising your effort.']},
+ recovery:{title:'Recovery run',zone:'Z1',purpose:'A short, very easy run that keeps blood moving after hard days. Swap it for rest if you’re sore or tired.',tips:['Slower than easy pace. Soft surfaces help.']},
+ long:{title:'Long run',zone:'Z2',purpose:'The key session for half marathons and marathons. It builds endurance, strengthens muscles and tendons, and trains fueling.',tips:['Start slower than easy pace for the first mile or two.','On runs over about 75 minutes, practice your race fuel every 30–45 minutes.','Run part of it on terrain like your race course.']},
+ mplong:{title:'Long run with race pace',zone:'Z3',purpose:'A long run with a block at goal race pace. It teaches you exactly what race pace feels like on tired legs.',tips:['Wear your race shoes and take your race fuel.','Don’t run the race-pace section faster than goal pace.']},
+ strides:{title:'Easy run + strides',zone:'Z2',purpose:'An easy run finished with short, fast, relaxed strides. Improves form and leg speed with almost no fatigue.',tips:['Strides are quick but relaxed, never a sprint. Walk or jog fully between them.']},
+ hills:{title:'Hill repeats',zone:'Z5',purpose:'Short, strong uphill efforts. Running-specific strength that builds power and form with less impact than fast flat running.',tips:['Find a moderate hill, roughly 4–8% grade.','Drive the arms, stay tall, and jog down easily.']},
+ threshold:{title:'Threshold run',zone:'Z4',purpose:'Comfortably hard running near your threshold. Raises the pace you can hold for a long time, key for 10K to marathon.',tips:['Comfortably hard: a pace you could race for about an hour.','Even pacing. The last rep should feel like the first.']},
+ intervals:{title:'Intervals',zone:'Z5',purpose:'Hard repeats at about 5K effort. They raise your aerobic ceiling and make race pace feel easier.',tips:['Run every rep at the same pace. Don’t race the first one.','A track or flat path makes pacing easier.']},
+ sharpen:{title:'Sharpening run',zone:'Z5',purpose:'A few short, quick reps to keep your legs sharp while total running drops before race day.',tips:['Fast and relaxed. Finish feeling fresher than you started.']},
+ shakeout:{title:'Shakeout run',zone:'Z2',purpose:'A short easy run to loosen up before race day.',tips:['Keep it short and easy. Lay out your race kit tonight.']},
+};
+function buildRunSteps(type,mi,ctx){
+  const S=[],pr=ctx.prog||0,rp=ctx.rp;
+  const D=(d,z,l)=>S.push({dist:d,z,label:l}),T=(m,z,l)=>S.push({min:m,z,label:l,timed:true});
+  const reps=(n,d,z,jog)=>{for(let i=0;i<n;i++){D(d,z,`${runZName(z)} rep`);if(i<n-1)T(jog,'Z1','Easy jog')}};
+  const sum=()=>S.reduce((a,s)=>a+(s.dist||(s.min*60/paceMid(s.z,rp))),0);
+  const structured=f=>{D(1.5,'Z2','Warm up, easy');f();const rest=mi-sum()-1;if(rest>=0.75)D(Math.round(rest*4)/4,'Z2','Easy');D(1,'Z2','Cool down, easy')};
+  switch(type){
+    case 'recovery':D(mi,'Z1','Very easy');break;
+    case 'easy':D(mi,'Z2','Easy, conversational');break;
+    case 'strides':D(Math.max(1,mi-0.5),'Z2','Easy, conversational');for(let i=0;i<6;i++){T(20/60,'Z7','Stride: quick and relaxed');T(1,'Z1','Walk or jog back')}break;
+    case 'long':{
+      const race=ctx.ev&&['marathon','half'].includes(ctx.ev.type);
+      if(ctx.phase==='build'&&pr>0.5&&mi>=10&&race){const f=Math.min(4,Math.round(mi*0.25));D(mi-f,'Z2','Easy');D(f,'Z3','Fast finish at race pace')}
+      else D(mi,'Z2','Easy and steady. Fuel every 30–45 min on long runs');
+      break;}
+    case 'mplong':{const m=clamp(Math.round(mi*0.45),3,12);D(2,'Z2','Easy warm up');D(m,'Z3','Goal race pace');if(mi-2-m>0)D(mi-2-m,'Z2','Easy to finish');break}
+    case 'hills':structured(()=>{const n=6+Math.round(4*pr);for(let i=0;i<n;i++){T(1,'Z5','Uphill, strong');T(1.5,'Z1','Jog back down')}});break;
+    case 'threshold':structured(()=>{if(pr<0.34)reps(4,1,'Z4',1);else if(pr<0.67)reps(3,1.5,'Z4',1.5);else D(clamp(Math.round(mi*0.4),2,5),'Z4','Continuous threshold run')});break;
+    case 'intervals':structured(()=>{if(pr<0.34)reps(6,0.5,'Z5',2.5);else if(pr<0.67)reps(5,0.62,'Z5',3);else reps(4,0.75,'Z5',3)});break;
+    case 'sharpen':structured(()=>reps(4,0.5,'Z5',2.5));break;
+    case 'shakeout':D(Math.max(1.5,mi-0.25),'Z2','Easy');for(let i=0;i<4;i++){T(20/60,'Z7','Stride: quick and relaxed');T(1,'Z1','Walk back')}break;
+    default:D(mi,'Z2','Easy');
+  }
+  for(const s of S){if(s.timed)s.dist=s.min*60/paceMid(s.z,rp);else s.min=s.dist*paceMid(s.z,rp)/60}
+  return S;
+}
+function makeRun(type,mi,ctx){
+  const def=RUN[type],steps=buildRunSteps(type,Math.max(1,Math.round(mi*2)/2),ctx);
+  let tips=def.tips;
+  if(ctx.setting==='indoor'&&['easy','long','recovery'].includes(type))tips=[...tips,'On a treadmill, set a 1% incline to better match outdoor running.'];
+  return {kind:'run',type,title:def.title,zone:def.zone,purpose:def.purpose,tips,steps,hours:steps.reduce((a,s)=>a+s.min,0)/60,miles:steps.reduce((a,s)=>a+s.dist,0),ctx};
+}
+function keyRunSessions(phase,prog,ev){
+  const t=ev.type,short=t==='5k'||t==='10k';
+  if(phase==='base')return prog<0.5?['hills','threshold']:['threshold','hills'];
+  if(phase==='build')return t==='trail'?['hills','threshold']:short?['intervals','threshold']:['threshold','intervals'];
+  if(phase==='peak')return short?['intervals','threshold']:['threshold','intervals'];
+  return ['sharpen'];
+}
+function pickHardDays(D,longDay,keys){
+  const cd=(a,b)=>{const x=Math.abs(a-b);return Math.min(x,7-x)};
+  const others=D.filter(d=>d!==longDay),hard=[];
+  for(const key of keys){
+    let best=null,bs=-1;
+    for(const d of others){
+      if(hard.some(h=>h.d===d))continue;
+      let s=Math.min(cd(d,longDay),...hard.map(h=>cd(d,h.d)),9);
+      if(d===(longDay+1)%7)s-=0.6;
+      if(s>bs){bs=s;best=d}
+    }
+    if(best!=null)hard.push({d:best,type:key});
+  }
+  return hard;
+}
+function buildRunWeek(p,wk,nextStr){
+  const ev=wk.ev,av=wk.avail;
+  let D=av.days.map((v,i)=>v?i:-1).filter(i=>i>=0);if(!D.length)D=[1,3,5];
+  const days=Array.from({length:7},(_,i)=>({date:addDays(wk.start,i),items:[]}));
+  const longDay=D.includes(av.longDay)?av.longDay:D[D.length-1];
+  const nHard=wk.recovery?0:wk.phase==='taper'?1:(D.length>=5||wk.phase!=='base')&&D.length>=4?2:1;
+  const hardDays=pickHardDays(D,longDay,wk.recovery?[]:keyRunSessions(wk.phase,wk.prog,ev).slice(0,nHard));
+  const rem=D.filter(d=>d!==longDay&&!hardDays.some(h=>h.d===d));
+  const after=(longDay+1)%7;
+  const recDay=D.length>=6&&rem.includes(after)?after:null;
+  const easyDays=rem.filter(d=>d!==recDay);
+  const ctx={phase:wk.phase,prog:wk.prog,ev,rp:wk.rp,setting:av.setting};
+  const longType=wk.phase==='peak'&&!wk.recovery&&['marathon','half'].includes(ev.type)?'mplong':'long';
+  const put=(d,type,mi)=>days[d].items.push(makeRun(type,mi,ctx));
+  put(longDay,longType,wk.long);
+  const q=clamp(wk.miles*0.17,4,9);
+  hardDays.forEach(h=>put(h.d,h.type,q));
+  let used=wk.long+q*hardDays.length;
+  if(recDay!=null){put(recDay,'recovery',3);used+=3}
+  if(easyDays.length){
+    const each=clamp((wk.miles-used)/easyDays.length,3,wk.phase==='taper'?5:10);
+    easyDays.forEach((d,i)=>put(d,i===0&&!wk.recovery&&wk.phase!=='taper'?'strides':'easy',each));
+  }
+  const tot=()=>days.reduce((a,d)=>a+d.items.filter(x=>x.kind==='run').reduce((s,x)=>s+x.miles,0),0);
+  let runs=days.filter(d=>d.items.length).length;
+  for(const d of [...(recDay!=null?[recDay]:[]),...easyDays.slice().reverse()]){
+    if(tot()<=wk.miles*1.08+0.5||runs<=3)break;
+    days[d].items=[];runs--;
+  }
+  assignStrength(p,wk,days,D,longDay,hardDays,false,after,nextStr);
+  days.forEach(d=>{if(!d.items.length)d.items.push({kind:'rest',title:'Rest day'})});
+  return days;
+}
+function runRaceWeek(p,wk,A){
+  const days=Array.from({length:7},(_,i)=>({date:addDays(wk.start,i),items:[]}));
+  const e=di(A.d),ctx={phase:'taper',prog:1,ev:A,rp:wk.rp,setting:wk.avail.setting},D=wk.avail.days;let sharp=false;
+  for(let d=0;d<7;d++){
+    const gap=e-d;
+    if(gap===0)days[d].items.push(raceItem(A));
+    else if(gap<0)days[d].items.push({kind:'rest',title:'Recovery',note:'Rest or walk. Easy running can wait a few days; after a marathon, keep running very light for a week or two.'});
+    else if(gap===1)days[d].items.push(D[d]?makeRun('shakeout',2.5,ctx):{kind:'rest',title:'Rest day',note:'Rest, hydrate, and lay out your race kit.'});
+    else if(gap===2)days[d].items.push({kind:'rest',title:'Rest day',note:'Full rest. Eat well and sleep.'});
+    else if(D[d]){if(!sharp&&gap<=4){days[d].items.push(makeRun('sharpen',4,ctx));sharp=true}else days[d].items.push(makeRun('easy',gap>=5?4:3,ctx))}
+    else days[d].items.push({kind:'rest',title:'Rest day'});
+  }
+  return days;
+}
+function buildRunCycle(p,start,N,A,carry,str,notes){
+  const r=p.run||{},age=+p.age||40,k=(age>=50||p.experience==='new')?3:4,rp=runPaces(p);
+  const longRace=A.type==='marathon'||A.type==='trail';
+  const pre=carry&&N>1?1:0,R0=N-pre;
+  const taperW=longRace&&R0>=14?3:(longRace||A.type==='half')&&R0>=6?2:1;
+  const R=Math.max(0,R0-taperW);
+  const peakW=R>=16?3:R>=8?2:R>=4?1:0;
+  let buildW=R>=6?Math.round((R-peakW)*0.4):Math.max(0,R-peakW-1);
+  let baseW=Math.max(0,R-peakW-buildW);
+  if(carry&&R<12){buildW+=baseW;baseW=0}
+  const E=paceMid('Z2',rp)/60;
+  const raceMi=RUN_TYPES[A.type].mi||Math.max(13,(+A.durationH||5)*60/(E*1.25));
+  const longMax=A.type==='marathon'?Math.min(20,180/E):A.type==='half'?Math.min(13,150/E):A.type==='10k'?Math.min(10,100/E):A.type==='5k'?Math.min(8,80/E):Math.min(raceMi*0.6,240/(E*1.15));
+  const share=A.type==='marathon'||A.type==='trail'?0.4:0.33;
+  const av0=availAt(p,start);
+  const w0=carry?carry.load*0.85:clamp(+r.curMiles||10,5,Math.max(5,av0.maxMiles));
+  const long0=carry?clamp(carry.long*0.8,3,longMax):clamp(+r.longest||4,3,longMax);
+  const phases=[['recover',0,pre],['base',pre,baseW],['build',pre+baseW,buildW],['peak',pre+baseW+buildW,peakW],['taper',pre+R,taperW]];
+  const out=[];let last=w0,lastLong=long0,maxLongHit=0;
+  for(let i=0;i<N;i++){
+    const ws=addDays(start,i*7),av=availAt(p,ws),ci=checkinEffect(p,ws),maxW=Math.max(8,av.maxMiles);
+    const ph=phases.find(([,s,l])=>i>=s&&i<s+l)||['taper',N-1,1];
+    const phase=ph[0],prog=ph[2]>1?(i-ph[1])/(ph[2]-1):1,isRace=i===N-1,li=i-pre,ti=i-(pre+R);
+    let recovery=phase==='recover'||(phase!=='taper'&&li>0&&(li+1)%k===0&&li!==R-1);
+    if(ci.reset&&phase!=='taper')recovery=true;
+    let miles,long;
+    if(phase==='taper'){
+      const f=taperW===3?[0.75,0.55,0.35]:taperW===2?[0.65,0.4]:[0.45];
+      miles=last*f[Math.min(ti,f.length-1)];long=isRace?0:lastLong*(ti===0&&taperW===3?0.7:0.55);
+    }else if(recovery){
+      miles=Math.min(maxW,last*0.7);long=Math.max(3,lastLong*0.7);
+      if(ci.reset){last*=0.85;lastLong*=0.85}
+    }else{
+      const ramp=baseW+buildW>1?Math.min(1,Math.max(0,li)/(baseW+buildW-1)):1;
+      let target=phase==='peak'?maxW:w0+(maxW-w0)*ramp;
+      target=Math.min(maxW,target*ci.scale);
+      miles=Math.max(Math.min(target,last*1.1+1),Math.min(w0,maxW)*0.85);last=miles;
+      const lp=R>1?Math.min(1,Math.max(0,li)/(R-1)):1;
+      long=Math.max(3,Math.min(long0+(longMax-long0)*lp,miles*share,lastLong+2));lastLong=long;
+    }
+    if(!isRace)maxLongHit=Math.max(maxLongHit,long);
+    const wk={phase,prog,recovery,isRace,miles,long,start:ws,fam:eventFamily(A),ev:A,avail:av,reset:ci.reset,first:!carry,li,rp,sport:'run'};
+    wk.days=isRace?runRaceWeek(p,wk,A):buildRunWeek(p,wk,()=>str.n++);
+    out.push(wk);
+  }
+  if(maxLongHit<longMax*0.85)notes.push(`For ${A.name||'your race'}, long runs reach about ${fmtDist(maxLongHit,p)}. More weekly running would let them build toward ${fmtDist(longMax,p)}. Raise your weekly ${U(p)==='km'?'kilometers':'miles'} in Setup if you can.`);
+  if(!rp.have)notes.push('Add a recent race time under Running in Setup to get pace targets. Until then, run by effort and the talk test.');
+  return {weeks:out,carry:{load:last,long:lastLong,sport:'run'}};
+}
+
 function makeRide(type,hours,ctx){
   const def=RIDE[type];
   const st=buildSteps(type,hours,ctx);
@@ -688,6 +893,16 @@ function buildSteps(type,hours,ctx){
 function eventTips(p,ev){
   const fam=eventFamily(ev),out=[];
   if(+ev.elevationFt>=5000)out.push({t:'Altitude',d:`Your event reaches about ${(+ev.elevationFt).toLocaleString()} ft. Aerobic power drops at altitude, so plan to ride at a lower power or heart rate than at home and pace the first hours conservatively. If you can, arrive at least 10–14 days early to start adapting; if not, arriving the day before is a common alternative. Drink more than usual and ask your doctor to check iron levels a few months out.`});
+  if(isRun(ev)){
+    const long=['marathon','half','trail'].includes(ev.type);
+    out.push({t:'Build mileage gradually',d:'Most running injuries come from doing too much too soon. Weekly running in your plan rises gradually, with a lighter week every few weeks. Sharp jumps in weekly distance (more than about 30% over two weeks) are linked to more injuries. If something hurts in a way that changes how you run, take two or three days off and check in.'});
+    if(long)out.push({t:'Practice race fueling',d:`For a ${ev.type==='half'?'half marathon':'marathon'}, take in about 30–60 g of carbohydrate per hour, starting in the first 30–45 minutes. Up to 90 g per hour is possible if you’ve trained your gut. Use your long runs to test the exact gels or chews and drinks you’ll use on race day.`});
+    out.push({t:'Pace evenly',d:'Even pacing, or a slightly faster second half, gives the best result for most runners. Go out at or a little slower than goal pace for the first few miles, even when it feels too easy.'});
+    if(long)out.push({t:'Taper',d:'Your plan cuts running for the last 2–3 weeks while keeping a little quality. Research on recreational marathoners found that longer, disciplined tapers were linked to faster finish times. Trust it; the fitness is already there.'});
+    out.push({t:'Nothing new on race day',d:'Race in shoes you’ve run in for a few weeks, and in clothes and fuel you’ve tested on long runs.'});
+    if(+p.age>=50)out.push({t:'Recovery for masters runners',d:'Your plan uses a lighter week every third week and keeps strength training in every phase. Sleep, protein (about 1.6 g per kg of body weight per day) and easy days matter more with age.'});
+    return out;
+  }
   if(fam==='ultra')out.push({t:'Fueling is a skill you train',d:`For events over 2.5 hours, research supports 60–90 g of carbohydrate per hour, using mixed sugars (glucose plus fructose) at the high end. Start lower on long rides and build up so your gut adapts. Practice every long ride with the exact foods and drinks you will use on the day.`});
   else if(fam==='endurance')out.push({t:'Fueling',d:`For 1–2.5 hour efforts, 30–60 g of carbohydrate per hour is the usual target. Practice it on long rides and race simulations.`});
   if(ev.type==='mtb'||ev.type==='gravel')out.push({t:'Skills and equipment',d:`Technical riding costs energy when you’re tense. The weekly skills ride and the Skills tab are part of the plan. Do your long rides on your race bike with race tires and pressures.`});
@@ -720,13 +935,13 @@ const P=()=>state.store.profile;
 function dayZone(d){
   const it=d.items;
   if(it.some(x=>x.kind==='race'))return 'RACE';
-  const r=it.find(x=>x.kind==='ride');
+  const r=it.find(isSess);
   if(r)return r.zone;
   if(it.some(x=>x.kind==='strength'))return 'GYM';
   return 'REST';
 }
 function dayLabel(d){
-  return d.items.map(x=>x.kind==='ride'?`${x.title} · ${fmtH(x.hours)}`:x.kind==='strength'?`${x.title} · ${x.minutes} min`:x.kind==='race'?`🏁 ${x.priority||'A'} race: ${x.title}`:x.title).join(' + ');
+  return d.items.map(x=>x.kind==='run'?`${x.title} · ${fmtDist(x.miles,P())}`:x.kind==='ride'?`${x.title} · ${fmtH(x.hours)}`:x.kind==='strength'?`${x.title} · ${x.minutes} min`:x.kind==='race'?`🏁 ${x.priority||'A'} race: ${x.title}`:x.title).join(' + ');
 }
 function profileBars(steps){
   const tot=steps.reduce((a,s)=>a+s.min,0)||1;
@@ -778,7 +993,7 @@ function itemCard(it,day,week,isToday,idx){
     return `<section class="card"><div class="row" style="justify-content:space-between"><div class="eyebrow">${when}</div>${prioChip(it.priority||'A')}</div><h1 class="day-title" style="margin-top:6px">🏁 ${esc(it.title)}</h1>
       <p style="margin-top:10px">${esc(lead)}</p>
       <ul class="tips"><li>Eat a familiar, carb-rich breakfast 3–4 hours before the start.</li><li>Start easier than you want to. Ride the first hour at endurance effort.</li>
-      ${eventFamily(ev)!=='short'?'<li>Eat from the first 30 minutes and keep a steady rhythm: your practiced grams per hour.</li>':''}
+      ${isRun(ev)?(['marathon','half','trail'].includes(ev.type)?'<li>Take your first gel or chews in the first 30–45 minutes, then keep to your practiced rhythm.</li><li>Run the first miles at or slightly slower than goal pace. An even pace finishes fastest.</li>':'<li>Warm up with 10–15 minutes of easy running and a few strides.</li>'):eventFamily(ev)!=='short'?'<li>Eat from the first 30 minutes and keep a steady rhythm: your practiced grams per hour.</li>':''}
       <li>Nothing new on race day: same food, same clothes, same bike setup.</li></ul>${doneBox?`<div style="margin-top:14px">${doneBox}</div>`:''}</section>`;
   }
   if(it.kind==='strength'){
@@ -788,8 +1003,25 @@ function itemCard(it,day,week,isToday,idx){
       <h${idx?2:1} class="${idx?'':'day-title'}" style="margin-top:6px">${esc(it.title)}</h${idx?2:1}>
       <div class="metrics"><div class="metric"><div class="v">${it.minutes} min</div><div class="k">Session</div></div><div class="metric"><div class="v">${esc(pre.name)}</div><div class="k">Phase</div></div><div class="metric"><div class="v">${esc(pre.rest)}</div><div class="k">Rest between sets</div></div></div>
       <p style="margin-top:12px"><b>${esc(pre.sets)}.</b> ${esc(pre.effort)}. <span class="muted">${esc(pre.note)}</span></p>
-      <p class="small muted" style="margin-top:6px">Warm up with 5–10 minutes of easy spinning or brisk walking first.</p>
-      <table class="steps"><tbody>${list.map(x=>{const e=EX[x];return `<tr><td>${e.core?esc(coreReps(x)):x==='jump'?'3 × 5':'see above'}</td><td><b>${esc(e.name)}</b><div class="target">${esc(home?e.home:e.gym)}</div></td><td style="text-align:right"><button class="btn small" data-act="ex" data-x="${x}">How to</button></td></tr>`}).join('')}</tbody></table></section>`;
+      <p class="small muted" style="margin-top:6px">Warm up with 5–10 minutes of easy spinning, jogging or brisk walking first.</p>
+      <table class="steps lift"><tbody>${list.map(x=>{const e=EX[x];return `<tr><td>${e.core?esc(coreReps(x)):x==='jump'?'3 × 5':'see above'}</td><td><b>${esc(e.name)}</b><div class="target">${esc(home?e.home:e.gym)}</div></td><td style="text-align:right"><button class="btn small" data-act="ex" data-x="${x}">How to</button></td></tr>`}).join('')}</tbody></table></section>`;
+  }
+  if(it.kind==='run'){
+    const zs=[...new Set(it.steps.map(s=>s.z))].sort((a,b)=>Z(b).i-Z(a).i),mainZ=zs.find(z=>z!=='Z7')||zs[0],rp=runPaces(p);
+    return `<section class="card z${it.zone}"><div class="row" style="justify-content:space-between"><div class="eyebrow">${when}</div>${doneBox}</div>
+    <h${idx?2:1} class="${idx?'':'day-title'}" style="margin-top:6px">${esc(it.title)}</h${idx?2:1}>
+    <div class="metrics">
+      <div class="metric"><div class="v mono">${fmtDist(it.miles,p)}</div><div class="k">Distance</div></div>
+      <div class="metric"><div class="v mono">${rp.have?'':'≈ '}${fmtH(it.hours)}</div><div class="k">Time${rp.have?'':' (estimate)'}</div></div>
+      <div class="metric"><div class="v">${runZName(mainZ)}</div><div class="k">Main effort</div></div>
+      <div class="metric" style="min-width:0"><div class="v mono" style="font-size:1.1rem;padding-top:6px;line-height:1.35">${runTargetParts(mainZ,p).map(x=>`<span style="white-space:nowrap">${esc(x)}</span>`).join(' · ')}</div><div class="k">Target</div></div>
+    </div>
+    ${profileBars(it.steps)}
+    <table class="steps"><tbody>${it.steps.map(s=>`<tr class="z${s.z}"><td>${s.timed?fmtMin(s.min):fmtDist(s.dist,p)}</td><td class="sw"><span></span></td><td>${esc(s.label)}<div class="target">${esc(runZName(s.z))} · ${esc(runTargetParts(s.z,p).join(' · '))}</div></td></tr>`).join('')}</tbody></table>
+    ${rp.have?'':'<p class="small muted" style="margin-top:8px">Add a recent race time under Running in Setup to get pace targets.</p>'}
+    <div class="cols" style="margin-top:16px"><div><div class="eyebrow">Why this workout</div><p style="margin-top:4px">${esc(it.purpose)}</p></div>
+    <div><div class="eyebrow">Tips</div><ul class="tips">${it.tips.map(t=>`<li>${esc(t)}</li>`).join('')}</ul></div></div>
+    ${videoBlock('run:'+it.type)}</section>`;
   }
   const zs=[...new Set(it.steps.map(s=>s.z))].sort((a,b)=>Z(b).i-Z(a).i);
   const mainZ=zs[0];
@@ -815,7 +1047,7 @@ function vPlan(){
   const p=P(),pl=state.plan;
   if(pl.error)return `<div class="card"><p class="err">${esc(pl.error)}</p></div>`;
   const N=pl.N;const t=today();const curI=pl.weeks.findIndex(w=>t>=w.start&&t<addDays(w.start,7));
-  const peakH=Math.max(...pl.weeks.map(w=>w.total));const longest=Math.max(...pl.weeks.flatMap(w=>w.days.flatMap(d=>d.items.filter(x=>x.kind==='ride').map(x=>x.hours))));
+  const peakH=Math.max(...pl.weeks.map(w=>w.total));const longest=Math.max(...pl.weeks.flatMap(w=>w.days.flatMap(d=>d.items.filter(isSess).map(x=>x.hours))));
   let h=exampleBanner();
   const evs=pl.events,lastW=pl.weeks[N-1];
   h+=`<section class="stack"><div><div class="eyebrow">Your season</div><h1 style="margin-top:4px">${esc(pl.mainEvent.name||'Your plan')}</h1>
@@ -837,19 +1069,28 @@ function vPlan(){
   h+=pl.notes.map(n=>`<div class="banner"><span>${esc(n)}</span></div>`).join('');
   h+=`<div class="card"><div class="row" style="justify-content:space-between"><div><div class="eyebrow">Take it with you</div><p class="small muted" style="margin-top:4px">PDF to print or keep on your phone. Calendar file imports into Google Calendar (Settings → Import). Zwift and Wahoo workout files are on each day’s workout and each week below. <a href="#devices">How to load them</a>.</p></div>
     <div class="row" id="dl-row"><button class="btn primary" data-act="pdf">Download PDF</button><button class="btn" data-act="csv">Calendar file (.csv)</button></div></div><p class="small muted" id="dl-note" hidden style="margin-top:8px">Downloads aren’t available in this view. Open the page in a browser to save files.</p></div>`;
-  h+=zonesCard();
+  if(pl.weeks.some(w=>w.sport!=='run'))h+=zonesCard();
+  if(pl.weeks.some(w=>w.sport==='run'))h+=runZonesCard();
   const tips=eventTips(p,pl.mainEvent);
   if(tips.length)h+=`<div class="card"><div class="eyebrow">For ${esc(pl.mainEvent.name||'your next A race')}</div><div style="margin-top:6px">${tips.map(x=>`<div class="principle"><h3>${esc(x.t)}</h3><p>${esc(x.d)}</p></div>`).join('')}</div></div>`;
   h+=`<div class="stack" style="gap:8px"><h2>Week by week</h2>`;
   pl.weeks.forEach((w,i)=>{
     const ph=w.isRace?'taper':w.phase;
-    h+=`<details class="week" ${i===curI||(curI<0&&i===0)?'open':''}><summary><span class="wk-n mono">${i+1}</span><span class="wk-meta"><b>${phaseName(w)}</b><span class="d"> · ${fmtShort(w.start)}–${fmtShort(addDays(w.start,6))} · ${fmtH(w.total)} riding</span></span>
-      <span class="wk-bars" aria-hidden="true">${w.days.map(d=>{const r=d.items.filter(x=>x.kind==='ride').reduce((a,x)=>a+x.hours,0);const z=dayZone(d);return `<i class="z${z}" style="--h:${z==='RACE'?100:z==='REST'?8:z==='GYM'?14:Math.max(14,Math.round(r/Math.max(1,peakH*0.45)*100))}%"></i>`}).join('')}</span></summary>
+    h+=`<details class="week" ${i===curI||(curI<0&&i===0)?'open':''}><summary><span class="wk-n mono">${i+1}</span><span class="wk-meta"><b>${phaseName(w)}</b><span class="d"> · ${fmtShort(w.start)}–${fmtShort(addDays(w.start,6))} · ${fmtH(w.total)}${w.miles>0.5?` · ${fmtDist(w.miles,p)}`:''} training</span></span>
+      <span class="wk-bars" aria-hidden="true">${w.days.map(d=>{const r=d.items.filter(isSess).reduce((a,x)=>a+x.hours,0);const z=dayZone(d);return `<i class="z${z}" style="--h:${z==='RACE'?100:z==='REST'?8:z==='GYM'?14:Math.max(14,Math.round(r/Math.max(1,peakH*0.45)*100))}%"></i>`}).join('')}</span></summary>
       <div class="wk-days">${w.days.map(d=>{const k=dkey(d.date);return `<div class="wk-day ${k===dkey(t)?'today':''}"><span class="when">${fmtD(d.date)}</span><span>${d.items.some(x=>x.kind!=='rest')?`<button data-act="goto" data-k="${k}">${esc(dayLabel(d))}</button>`:`<span class="muted">${esc(dayLabel(d))}</span>`}</span><span class="small">${state.store.done[k]?'✓':''}</span></div>`}).join('')}
       ${w.days.some(d=>d.items.some(x=>x.kind==='ride'))?`<div class="wk-files"><span class="small muted">This week’s rides:</span><button class="btn small" data-act="weekfiles" data-w="${i}" data-fmt="zwo">Zwift files</button><button class="btn small" data-act="weekfiles" data-w="${i}" data-fmt="fit">Wahoo files</button></div>`:''}</div></details>`;
   });
   h+=`</div></section>`;
   return h;
+}
+function runZonesCard(){
+  const p=P(),rp=runPaces(p),r=p.run||{};
+  return `<div class="card"><div class="eyebrow">Your running paces</div>
+  <p class="small muted" style="margin-top:4px">${rp.have?`From your ${RUN_TYPES[r.raceDist].n} in ${esc(r.raceTime)}. Predicted marathon: about ${fmtHMS(rp.M*26.219)}. Prediction formulas tend to be optimistic for the marathon, so use goal pace as a ceiling, not a floor.`:'Add a recent race time under Running in Setup for pace targets. Until then, run by effort and the talk test.'}</p>
+  <div class="tblwrap" style="margin-top:8px"><table class="zones"><thead><tr><th>Zone</th><th>Pace</th><th>Effort</th><th>Talk test</th></tr></thead><tbody>
+  ${['Z1','Z2','Z3','Z4','Z5','Z7'].map(z=>{const [a,b]=paceRange(z,rp);return `<tr><td><span class="chip z${z}"><span class="dot"></span>${runZName(z)}</span></td><td class="mono">${rp.have?`${fmtPace(a,p)}–${fmtPace(b,p)} /${U(p)}`:'—'}</td><td class="mono">${z==='Z7'?'RPE 8–9':'RPE '+Z(z).rpe}</td><td>${RUNZ[z][3]}</td></tr>`}).join('')}
+  </tbody></table></div></div>`;
 }
 function zonesCard(){
   const p=P();const mh=hrMax(p);
@@ -888,6 +1129,9 @@ function exCard(k,home){
   ${videoBlock('ex:'+k)}<p class="row" style="margin-top:10px">${ytLinks(e.vq)}</p></div></article>`;
 }
 const ARTICLES=[
+ {t:'Running form and cadence',k:'runform',q:'running form technique',b:['Good form is mostly relaxed form: tall posture, a slight forward lean from the ankles, relaxed shoulders and hands, and arms swinging forward and back rather than across the body.','<b>Cadence:</b> many runners overstride, landing with the foot far ahead of the body. Increasing step rate by 5–10% shortens the stride and reduces load on the knee and hip. Count steps for 30 seconds and double it; try raising it a few steps per minute over several weeks.','<b>Landing:</b> aim for the foot to land closer to under your body. Don’t force a forefoot strike; focus on quick, light steps.','<b>Strides</b> (in your easy runs) are the simplest way to practice smooth, efficient form at speed.']},
+ {t:'Avoiding running injuries',k:'runinjury',q:'running injury prevention',b:['<b>Build gradually.</b> Big jumps in weekly distance are linked to more injuries. Your plan increases slowly and includes recovery weeks.','<b>Keep easy runs easy.</b> Most running should be conversational. Running every run hard adds stress without much extra fitness.','<b>Strength train.</b> Calf raises, split squats, step-ups and hip work in the Gym tab make muscles and tendons more resilient and improve running economy.','<b>Listen to warning signs:</b> pain that gets worse during a run, changes how you run, or lingers the next morning. Take two or three days off; if it persists, see a doctor or physical therapist.','<b>Shoes:</b> pick shoes that feel comfortable. Rotate in new shoes gradually before old ones are worn out.']},
+ {t:'Marathon pacing and fueling',k:'marathon',q:'marathon pacing fueling',b:['<b>Pacing:</b> the most common marathon mistake is starting too fast. Plan to run the first 5–10K at or slightly slower than goal pace. Even pacing finishes fastest for most runners.','<b>Fueling:</b> take 30–60 g of carbohydrate per hour (more if your gut is trained), starting in the first 30–45 minutes. Gels with water at aid stations are the simplest approach.','<b>Practice:</b> long runs with race-pace sections are where you rehearse pace, fuel, shoes and clothing.','<b>The day before:</b> a carbohydrate-rich dinner you know well, fluids through the day, and an early night. A short shakeout run is optional.']},
  {t:'Bike fit basics',k:'fit',q:'bike fit saddle height',b:['A good fit prevents most overuse pain and lets you produce power for hours. A professional fit is worth it before a big training year; these are the basics to check.','<b>Saddle height:</b> at the bottom of the stroke, with your heel on the pedal, your leg should be straight. With the ball of the foot on the pedal, that leaves a slight bend (roughly 25–35° at the knee).','<b>Saddle position:</b> level, or nose down a degree or two. Knee pain at the front often means too low; pain behind the knee often means too high.','<b>Reach:</b> elbows slightly bent and shoulders relaxed. Numb hands or a sore neck usually means too much reach or too much weight on the hands.','<b>Cleats:</b> ball of the foot over the pedal axle; let the feet sit at their natural angle.']},
  {t:'Pedaling and cadence',k:'pedaling',q:'pedalling technique cadence',b:['Most riders are efficient between about 80 and 95 rpm on flat ground and somewhat lower on steep climbs. There is no single right cadence; smooth matters more than fast.','<b>Drill: high-cadence spin-ups.</b> During an endurance ride, raise cadence gradually over 1 minute until you start bouncing on the saddle, then back off slightly and hold 30 seconds. 4–5 repeats.','<b>Drill: single-leg focus.</b> On a trainer, unclip one foot and pedal 30–60 seconds with the other, aiming for no “dead spot” at the top. Switch legs.','Relax your upper body. Tension in the shoulders and grip wastes energy over long events.']},
  {t:'Climbing',k:'climbing',q:'how to climb',b:['<b>Seated</b> climbing is more efficient for steady grades: slide back on the saddle, relax the arms, and keep a steady rhythm.','<b>Standing</b> uses more energy but uses different muscles and helps on steep pitches. Shift up one or two gears as you stand so your cadence doesn’t spike, and let the bike rock gently under you.','<b>Pace the climb, not the moment.</b> Start a long climb at an effort you could hold to the top. On long events, climbs are where most riders overspend.','<b>On loose climbs (MTB/gravel):</b> stay seated to keep weight on the rear wheel, lower your chest toward the bars to keep the front wheel down, and keep pedal strokes smooth to avoid spinning out.']},
@@ -919,6 +1163,14 @@ const REFS=[
  'Issurin VB. New horizons for the methodology and physiology of training periodization. Sports Med. 2010;40(3):189–206.',
  'Allen H, Coggan AR, McGregor S. Training and Racing with a Power Meter. 3rd ed. VeloPress; 2019.',
  'Friel J. The Cyclist’s Training Bible. 5th ed. VeloPress; 2018. Also: Friel J. Fast After 50. VeloPress; 2015.',
+ 'Nielsen RO, Parner ET, Nohr EA, Sørensen H, Lind M, Rasmussen S. Excessive progression in weekly running distance and risk of running-related injuries: an association which varies according to type of injury. J Orthop Sports Phys Ther. 2014;44(10):739–747.',
+ 'Buist I, Bredeweg SW, van Mechelen W, Lemmink KAPM, Pepping GJ, Diercks RL. No effect of a graded training program on the number of running-related injuries in novice runners: a randomized controlled trial. Am J Sports Med. 2008;36(1):33–39.',
+ 'Smyth B, Lawlor A. Longer disciplined tapers improve marathon performance for recreational runners. Front Sports Act Living. 2021;3:735220.',
+ 'Riegel PS. Athletic records and human endurance. Am Sci. 1981;69(3):285–290.',
+ 'Vickers AJ, Vertosick EA. An empirical study of race times in recreational endurance runners. BMC Sports Sci Med Rehabil. 2016;8:26.',
+ 'Daniels J. Daniels’ Running Formula. 3rd ed. Human Kinetics; 2014.',
+ 'Blagrove RC, Howatson G, Hayes PR. Effects of strength training on the physiological determinants of middle- and long-distance running performance: a systematic review. Sports Med. 2018;48(5):1117–1149.',
+ 'Heiderscheit BC, Chumanov ES, Michalski MP, Wille CM, Ryan MB. Effects of step rate manipulation on joint mechanics during running. Med Sci Sports Exerc. 2011;43(2):296–302.',
 ];
 const PRINC=[
  {t:'Most riding is easy',r:[1,2],d:'Well-trained endurance athletes do roughly 75–80% of their training at low intensity, with the hard work concentrated in a few sessions. Your plan keeps most hours in Zones 1–2 and limits hard days to one or two a week.'},
@@ -930,6 +1182,11 @@ const PRINC=[
  {t:'Fuel the work',r:[7,8,9],d:'Carbohydrate targets scale with event length, up to 60–90 g per hour for events over 2.5 hours. Daily protein around 1.6 g/kg supports strength gains.'},
  {t:'Masters athletes',r:[10,15],d:'Endurance performance declines with age, but training slows much of that decline. Keeping some intensity and strength work year-round, and allowing more recovery, is the common recommendation.'},
  {t:'Zones',r:[12,14,15],d:'Power zones are based on FTP; heart rate zones on threshold heart rate. Without either, max heart rate is estimated from age (208 − 0.7 × age), which can be off by 10+ bpm for individuals. A field test is better.'},
+ {t:'Running: build gradually',r:[16,17],d:'In a large study of novice runners, sharp increases in weekly running distance (over about 30% across two weeks) were linked to more of certain injuries. A randomized trial found that a strict 10%-per-week rule alone did not prevent injuries. The plan ramps gradually and adds recovery weeks.'},
+ {t:'Running paces',r:[19,20,21],d:'Paces come from a recent race time using Riegel’s race-time formula, with threshold pace set to the pace you could race for about an hour. A study of recreational runners found these predictions tend to be optimistic for the marathon, so goal pace is treated as a ceiling.'},
+ {t:'Marathon taper',r:[18,6],d:'An analysis of more than 150,000 recreational marathoners linked longer, disciplined tapers (around three weeks) with faster finish times. Marathon plans with enough weeks get a three-week taper.'},
+ {t:'Strength for runners',r:[22],d:'A systematic review found strength training improved running economy and other determinants of distance running performance. The same Gym program is used for runners and cyclists.'},
+ {t:'Running cadence',r:[23],d:'Increasing step rate by 5–10% reduced loading at the knee and hip in a laboratory study, which is why the Skills tab suggests gradual cadence increases for runners who overstride.'},
  {t:'Altitude',r:[11],d:'Aerobic capacity and performance fall steadily as altitude increases, even at moderate altitudes, so pacing targets need adjusting for high events.'},
 ];
 function vScience(){
@@ -941,13 +1198,14 @@ function vScience(){
 }
 let blockSeq=0;
 const EVTYPES=[['mtb','Mountain bike (marathon / 100-mile)'],['gravel','Gravel'],['road','Road: century or gran fondo'],['crit','Criterium or short circuit race'],['tt','Time trial / triathlon bike'],['climb','Hill climb'],['stage','Multi-day or stage event']];
+const RUNTYPES=[['5k','5K'],['10k','10K'],['half','Half marathon'],['marathon','Marathon'],['trail','Trail race or ultra']];
 function evBlock(ev){
   const n=blockSeq++;ev=ev||{};
   return `<div class="sub" data-ev="${n}" data-id="${esc(ev.id||'')}"><div class="row" style="justify-content:space-between"><b>Event</b><button type="button" class="btn small" data-act="rm-block">Remove</button></div><div class="grid2" style="margin-top:10px">
    <label class="f" for="f-ev-name-${n}">Event name<input type="text" id="f-ev-name-${n}" value="${esc(ev.name)}" placeholder="e.g. Gran fondo, 100-mile MTB race"></label>
    <label class="f" for="f-ev-date-${n}">Date<input type="date" id="f-ev-date-${n}" value="${esc(ev.date)}"></label>
    <label class="f" for="f-ev-prio-${n}">Priority<select id="f-ev-prio-${n}">${selOpt('A',ev.priority||'A','A: main goal, full peak and taper')}${selOpt('B',ev.priority,'B: important, short taper')}${selOpt('C',ev.priority,'C: training race')}</select></label>
-   <label class="f" for="f-ev-type-${n}">Type of event<select id="f-ev-type-${n}">${EVTYPES.map(([v,l])=>selOpt(v,ev.type,l)).join('')}</select></label>
+   <label class="f" for="f-ev-type-${n}">Type of event<select id="f-ev-type-${n}"><optgroup label="Cycling">${EVTYPES.map(([v,l])=>selOpt(v,ev.type,l)).join('')}</optgroup><optgroup label="Running">${RUNTYPES.map(([v,l])=>selOpt(v,ev.type,l)).join('')}</optgroup></select></label>
    <label class="f" for="f-ev-dur-${n}">Expected finish time (hours)<span class="hint">For multi-day events, the longest day.</span><input type="number" id="f-ev-dur-${n}" min="0.25" max="30" step="0.25" value="${esc(ev.durationH||'')}"></label>
    <label class="f" for="f-ev-elev-${n}">Highest elevation (ft)<span class="hint">Optional. Altitude advice above 5,000 ft.</span><input type="number" id="f-ev-elev-${n}" min="0" max="20000" step="100" value="${esc(ev.elevationFt)}"></label>
    <label class="f" for="f-ev-goal-${n}">Goal<select id="f-ev-goal-${n}">${selOpt('finish',ev.goal,'Finish strong')}${selOpt('time',ev.goal,'Hit a time goal')}${selOpt('compete',ev.goal,'Compete for placing')}</select></label>
@@ -960,10 +1218,11 @@ function chgBlock(c){
   return `<div class="sub" data-chg="${n}" data-id="${esc(c.id||'')}"><div class="row" style="justify-content:space-between"><b>Schedule change</b><button type="button" class="btn small" data-act="rm-block">Remove</button></div><div class="grid2" style="margin-top:10px">
    <label class="f" for="f-ch-from-${n}">Starting<input type="date" id="f-ch-from-${n}" value="${esc(c.from)}"></label>
    <label class="f" for="f-ch-label-${n}">Name<span class="hint">Optional, e.g. Summer.</span><input type="text" id="f-ch-label-${n}" value="${esc(c.label)}"></label>
-   <label class="f" for="f-ch-hours-${n}">Most hours per week<input type="number" id="f-ch-hours-${n}" min="2" max="30" step="0.5" value="${esc(c.maxHours)}"></label>
+   <label class="f" for="f-ch-hours-${n}">Most hours per week<span class="hint">Cycling.</span><input type="number" id="f-ch-hours-${n}" min="2" max="30" step="0.5" value="${esc(c.maxHours)}"></label>
+   <label class="f" for="f-ch-miles-${n}">Most running per week (${U(P())})<span class="hint">Running. Leave blank to keep it the same.</span><input type="number" id="f-ch-miles-${n}" min="5" max="150" step="1" value="${c.maxMiles?Math.round(toU(c.maxMiles,P())):''}"></label>
    <label class="f" for="f-ch-set-${n}">Where you’ll ride<select id="f-ch-set-${n}">${SETTINGS.map(([v,l])=>selOpt(v,c.setting||'outdoor',l)).join('')}</select></label>
    <label class="f" for="f-ch-long-${n}">Long ride day<select id="f-ch-long-${n}">${DAYL.map((d,i)=>selOpt(i,c.longDay!=null?c.longDay:5,d)).join('')}</select></label>
-  </div><div style="margin-top:12px"><div style="font-weight:600;font-size:.88rem;margin-bottom:6px">Days you can ride</div>${daysPicker(`f-ch-d${n}-`,c.days||[false,true,true,true,false,true,true])}</div></div>`;
+  </div><div style="margin-top:12px"><div style="font-weight:600;font-size:.88rem;margin-bottom:6px">Days you can train</div>${daysPicker(`f-ch-d${n}-`,c.days||[false,true,true,true,false,true,true])}</div></div>`;
 }
 function vSetup(){
   const p=state.example?exampleProfile():P();
@@ -979,11 +1238,19 @@ function vSetup(){
    <label class="f" for="f-exp">Cycling experience<select id="f-exp">${opt('new',p.experience,'New: less than a year of regular riding')}${opt('some',p.experience,'Some: 1–3 years')}${opt('experienced',p.experience,'Experienced: 3+ years, has raced')}</select></label>
    <label class="f" for="f-str">Strength training<select id="f-str">${opt('gym',p.strength,'I have gym access')}${opt('home',p.strength,'At home (dumbbells, bands, bodyweight)')}${opt('none',p.strength,'No strength training')}</select></label>
   </div></fieldset>
-  <fieldset><legend>Fitness numbers</legend><p class="small muted" style="margin-bottom:12px">All optional. Without them, workouts use effort (RPE) and an age-based heart rate estimate.</p><div class="grid2">
+  <fieldset><legend>Cycling fitness</legend><p class="small muted" style="margin-bottom:12px">For cycling events. All optional. Without them, workouts use effort (RPE) and an age-based heart rate estimate.</p><div class="grid2">
    <label class="f" for="f-ftp">FTP (watts)<span class="hint">From a power meter or smart trainer test.</span><input type="number" id="f-ftp" min="50" max="500" value="${esc(p.ftp)}"></label>
    <label class="f" for="f-lthr">Threshold heart rate (bpm)<span class="hint">Average HR for the last 20 min of a 30-min all-out ride.</span><input type="number" id="f-lthr" min="90" max="210" value="${esc(p.lthr)}"></label>
    <label class="f" for="f-maxhr">Max heart rate (bpm)<span class="hint">Only if you’ve measured it.</span><input type="number" id="f-maxhr" min="100" max="230" value="${esc(p.maxhr)}"></label>
    <label class="f" for="f-longest">Longest ride in the last month (hours)<input type="number" id="f-longest" min="0" max="12" step="0.25" value="${esc(p.longest)}"></label>
+  </div></fieldset>
+  <fieldset><legend>Running</legend><p class="small muted" style="margin-bottom:12px">Only needed for running events.</p><div class="grid2">
+   <label class="f" for="f-run-units">Units<select id="f-run-units">${opt('mi',U(p),'Miles')}${opt('km',U(p),'Kilometers')}</select></label>
+   <label class="f" for="f-run-rd">Recent race<span class="hint">Your best race in the last few months. Sets your paces.</span><select id="f-run-rd">${opt('',(p.run||{}).raceDist||'','None yet')}${['5k','10k','half','marathon'].map(k=>opt(k,(p.run||{}).raceDist,RUN_TYPES[k].n)).join('')}</select></label>
+   <label class="f" for="f-run-rt">Race time<span class="hint">For example 27:30 or 1:58:00.</span><input type="text" id="f-run-rt" inputmode="numeric" value="${esc((p.run||{}).raceTime)}" placeholder="h:mm:ss"></label>
+   <label class="f" for="f-run-cur">Running per week now (${U(p)})<input type="number" id="f-run-cur" min="0" max="150" step="1" value="${(p.run||{}).curMiles?Math.round(toU(p.run.curMiles,p)):''}"></label>
+   <label class="f" for="f-run-max">Most running per week (${U(p)})<span class="hint">At the busiest point of the plan.</span><input type="number" id="f-run-max" min="5" max="150" step="1" value="${(p.run||{}).maxMiles?Math.round(toU(p.run.maxMiles,p)):''}"></label>
+   <label class="f" for="f-run-long">Longest run in the last month (${U(p)})<input type="number" id="f-run-long" min="0" max="40" step="0.5" value="${(p.run||{}).longest?Math.round(toU(p.run.longest,p)*2)/2:''}"></label>
   </div></fieldset>
   <fieldset><legend>Your week now</legend><div class="grid2">
    <label class="f" for="f-cur">Hours riding per week now<input type="number" id="f-cur" min="0" max="30" step="0.5" value="${esc(p.currentHours)}"></label>
@@ -992,7 +1259,7 @@ function vSetup(){
    <label class="f" for="f-start">Plan start date<input type="date" id="f-start" value="${esc(state.example?dkey(today()):p.startDate)}"></label>
    <label class="f" for="f-long">Long ride day<select id="f-long">${DAYL.map((d,i)=>opt(i,p.longDay,d)).join('')}</select></label>
   </div>
-  <div style="margin-top:14px"><div class="f" style="font-weight:600;font-size:.88rem;margin-bottom:6px">Days you can ride</div>${daysPicker('f-d',p.days)}</div></fieldset>
+  <div style="margin-top:14px"><div class="f" style="font-weight:600;font-size:.88rem;margin-bottom:6px">Days you can train</div>${daysPicker('f-d',p.days)}</div></fieldset>
   <fieldset><legend>Seasons and schedule changes</legend><p class="small muted" style="margin-bottom:12px;max-width:68ch">Will your time or riding change during the year? More hours in summer, riding outside instead of on the trainer? Add each change with the date it starts.</p>
    <div class="stack" id="chg-list" style="gap:12px">${(p.changes||[]).map(chgBlock).join('')}</div>
    <button type="button" class="btn" data-act="add-chg" style="margin-top:12px">+ Add schedule change</button></fieldset>
@@ -1008,15 +1275,19 @@ function readForm(){
   const g=id=>document.getElementById(id);const v=id=>g(id).value.trim();
   const days=DAYN.map((_,i)=>g('f-d'+i).checked);
   const events=[...document.querySelectorAll('#ev-list .sub')].map(el=>{const n=el.dataset.ev;return {id:el.dataset.id||uid(),name:v('f-ev-name-'+n)||'My event',date:v('f-ev-date-'+n),priority:v('f-ev-prio-'+n),type:v('f-ev-type-'+n),durationH:+v('f-ev-dur-'+n)||3,elevationFt:+v('f-ev-elev-'+n)||'',goal:v('f-ev-goal-'+n)}});
-  const changes=[...document.querySelectorAll('#chg-list .sub')].map(el=>{const n=el.dataset.chg;return {id:el.dataset.id||uid(),from:v('f-ch-from-'+n),label:v('f-ch-label-'+n),maxHours:+v('f-ch-hours-'+n)||'',setting:v('f-ch-set-'+n),longDay:+v('f-ch-long-'+n),days:DAYN.map((_,i)=>g(`f-ch-d${n}-${i}`).checked)}}).filter(c=>c.from);
-  const old=state.example?{}:P();
+  const changes=[...document.querySelectorAll('#chg-list .sub')].map(el=>{const n=el.dataset.chg;return {id:el.dataset.id||uid(),from:v('f-ch-from-'+n),label:v('f-ch-label-'+n),maxHours:+v('f-ch-hours-'+n)||'',maxMiles:+v('f-ch-miles-'+n)?fromU(+v('f-ch-miles-'+n),v('f-run-units')):'',setting:v('f-ch-set-'+n),longDay:+v('f-ch-long-'+n),days:DAYN.map((_,i)=>g(`f-ch-d${n}-${i}`).checked)}}).filter(c=>c.from);
+  const old=state.example?{}:P(),errs=[];
   const p={name:v('f-name'),age:+v('f-age')||'',experience:v('f-exp'),strength:v('f-str'),ftp:+v('f-ftp')||'',lthr:+v('f-lthr')||'',maxhr:+v('f-maxhr')||'',
     longest:+v('f-longest')||1.5,currentHours:+v('f-cur')||3,maxHours:+v('f-max')||6,setting:v('f-set'),startDate:v('f-start')||dkey(today()),longDay:+v('f-long'),days,
     events,changes,checkins:old.checkins||[]};
-  const errs=[];
+  const units=v('f-run-units'),rf=id=>+v(id)?fromU(+v(id),units):'';
+  p.run={units,raceDist:v('f-run-rd'),raceTime:v('f-run-rt'),curMiles:rf('f-run-cur'),maxMiles:rf('f-run-max'),longest:rf('f-run-long')};
+  if(p.run.raceDist&&!parseTime(p.run.raceTime))errs.push('Enter your race time like 27:30 or 1:58:00.');
+  if(events.some(isRun)&&!p.run.maxMiles)errs.push('Add your most running per week under Running.');
+  if(p.run.maxMiles&&p.run.curMiles>p.run.maxMiles)p.run.maxMiles=p.run.curMiles;
   if(!events.length)errs.push('Add at least one event.');
   if(events.some(e=>!e.date))errs.push('Every event needs a date.');
-  if(days.filter(Boolean).length<3)errs.push('Pick at least 3 riding days.');
+  if(days.filter(Boolean).length<3)errs.push('Pick at least 3 training days.');
   if(changes.some(c=>c.days.filter(Boolean).length<3))errs.push('Each schedule change needs at least 3 riding days.');
   if(p.maxHours<p.currentHours)p.maxHours=p.currentHours;
   if(!days[p.longDay]){const last=[5,6,4,3,2,1,0].find(i=>days[i]);if(last!=null)p.longDay=last}
@@ -1042,16 +1313,19 @@ function vCheckin(){
    <p class="small muted" style="margin-top:8px">If you’re still sick or hurt, rest until you’re better and check with a doctor before training hard again.</p></fieldset>
   <fieldset><legend>New fitness numbers?</legend><p class="small muted" style="margin-bottom:12px">Only if you’ve retested. Workout targets and device files update right away.</p><div class="grid2">
    <label class="f" for="f-ci-ftp">FTP (watts)<input type="number" id="f-ci-ftp" min="50" max="500" value="${esc(p.ftp)}"></label>
-   <label class="f" for="f-ci-lthr">Threshold heart rate (bpm)<input type="number" id="f-ci-lthr" min="90" max="210" value="${esc(p.lthr)}"></label></div></fieldset>
+   <label class="f" for="f-ci-lthr">Threshold heart rate (bpm)<input type="number" id="f-ci-lthr" min="90" max="210" value="${esc(p.lthr)}"></label>
+   <label class="f" for="f-ci-rd">New race result<select id="f-ci-rd">${selOpt('','','None')}${['5k','10k','half','marathon'].map(k=>selOpt(k,'',RUN_TYPES[k].n)).join('')}</select></label>
+   <label class="f" for="f-ci-rt">Race time<input type="text" id="f-ci-rt" inputmode="numeric" placeholder="h:mm:ss"></label></div></fieldset>
   <fieldset><legend>Is your schedule changing?</legend>
-   <label class="done-toggle" for="f-ci-chg"><input type="checkbox" id="f-ci-chg">Yes: different hours, days, or riding inside vs. outside</label>
+   <label class="done-toggle" for="f-ci-chg"><input type="checkbox" id="f-ci-chg">Yes: different hours, days, or training inside vs. outside</label>
    <div id="ci-chg-fields" hidden style="margin-top:14px"><div class="grid2">
     <label class="f" for="f-ci-from">Starting<input type="date" id="f-ci-from" value="${dkey(nm)}"></label>
     <label class="f" for="f-ci-label">Name<span class="hint">Optional, e.g. Summer.</span><input type="text" id="f-ci-label"></label>
-    <label class="f" for="f-ci-hours">Most hours per week<input type="number" id="f-ci-hours" min="2" max="30" step="0.5" value="${esc(av.maxHours)}"></label>
+    <label class="f" for="f-ci-hours">Most hours per week<span class="hint">Cycling.</span><input type="number" id="f-ci-hours" min="2" max="30" step="0.5" value="${esc(av.maxHours)}"></label>
+    <label class="f" for="f-ci-miles">Most running per week (${U(p)})<span class="hint">Running.</span><input type="number" id="f-ci-miles" min="5" max="150" step="1" value="${Math.round(toU(av.maxMiles,p))}"></label>
     <label class="f" for="f-ci-set">Where you’ll ride<select id="f-ci-set">${SETTINGS.map(([v,l])=>selOpt(v,av.setting,l)).join('')}</select></label>
     <label class="f" for="f-ci-long">Long ride day<select id="f-ci-long">${DAYL.map((d,i)=>selOpt(i,av.longDay,d)).join('')}</select></label>
-   </div><div style="margin-top:12px"><div style="font-weight:600;font-size:.88rem;margin-bottom:6px">Days you can ride</div>${daysPicker('f-ci-d',av.days)}</div></div></fieldset>
+   </div><div style="margin-top:12px"><div style="font-weight:600;font-size:.88rem;margin-bottom:6px">Days you can train</div>${daysPicker('f-ci-d',av.days)}</div></div></fieldset>
   <p class="err" id="ci-err" hidden></p>
   <div class="row"><button class="btn primary" type="submit">Update my plan</button><a class="btn" href="#today">Cancel</a></div></form>`;
 }
@@ -1063,10 +1337,12 @@ function submitCheckin(){
   const ftp=+g('f-ci-ftp').value||'',lthr=+g('f-ci-lthr').value||'';
   if(ftp&&ftp!==+p.ftp){notes.push(`FTP ${p.ftp?p.ftp+' → ':''}${ftp} W`);p.ftp=ftp}
   if(lthr&&lthr!==+p.lthr){p.lthr=lthr}
+  const rd=g('f-ci-rd').value,rt=g('f-ci-rt').value.trim();
+  if(rd){if(!parseTime(rt)){err.textContent='Enter your race time like 27:30 or 1:58:00.';err.hidden=false;return}p.run={...(p.run||{}),raceDist:rd,raceTime:rt};notes.push(`new paces from your ${RUN_TYPES[rd].n}`)}
   if(g('f-ci-chg').checked){
     const days=DAYN.map((_,i)=>g('f-ci-d'+i).checked);
     if(days.filter(Boolean).length<3){err.textContent='Pick at least 3 riding days.';err.hidden=false;return}
-    const ch={id:uid(),from:g('f-ci-from').value||dkey(addDays(monday(today()),7)),label:g('f-ci-label').value.trim(),maxHours:+g('f-ci-hours').value||6,setting:g('f-ci-set').value,longDay:+g('f-ci-long').value,days};
+    const ch={id:uid(),from:g('f-ci-from').value||dkey(addDays(monday(today()),7)),label:g('f-ci-label').value.trim(),maxHours:+g('f-ci-hours').value||6,maxMiles:+g('f-ci-miles').value?fromU(+g('f-ci-miles').value,U(p)):'',setting:g('f-ci-set').value,longDay:+g('f-ci-long').value,days};
     p.changes=(p.changes||[]).filter(x=>x.from!==ch.from).concat(ch);
     notes.push(`new schedule from ${fmtShort(parse(ch.from))}`);
   }
@@ -1090,7 +1366,8 @@ function makeCSV(){
     if(it.kind==='rest')continue;
     const date=`${pad(d.date.getMonth()+1)}/${pad(d.date.getDate())}/${d.date.getFullYear()}`;
     let subj,desc;
-    if(it.kind==='ride'){subj=`${it.title} (${fmtH(it.hours)})`;desc=it.steps.map(s=>`${fmtMin(s.min)} - ${s.label} - ${s.z==='SS'?'Sweet spot':s.z} (${targetStr(s.z,p)})`).join('\n')+'\n\n'+it.purpose}
+    if(it.kind==='run'){subj=`${it.title} (${fmtDist(it.miles,p)})`;desc=it.steps.map(s=>`${s.timed?fmtMin(s.min):fmtDist(s.dist,p)} - ${s.label} - ${runZName(s.z)} (${runTargetParts(s.z,p).join(', ')})`).join('\n')+'\n\n'+it.purpose}
+    else if(it.kind==='ride'){subj=`${it.title} (${fmtH(it.hours)})`;desc=it.steps.map(s=>`${fmtMin(s.min)} - ${s.label} - ${s.z==='SS'?'Sweet spot':s.z} (${targetStr(s.z,p)})`).join('\n')+'\n\n'+it.purpose}
     else if(it.kind==='strength'){subj=`${it.title} (${it.minutes} min)`;desc=`${SPRESC[it.stage].sets}. `+SESS[it.which].map(x=>EX[x].name).join(', ')}
     else{subj=`RACE: ${it.title}`;desc='Race day. Start easy, eat early, nothing new.'}
     rows.push([q(pdfSafe(subj)),date,'True',q(pdfSafe(desc))].join(','));
@@ -1107,6 +1384,7 @@ function makePDF(){
   pl.events.forEach(e=>line(`${fmtD(e.d)} ${e.d.getFullYear()}   ${e.priority} race: ${e.name}`,9,'normal',3));
   y+=6;
   line('Zones',13,'bold',4);
+  if(pl.weeks.some(w=>w.sport==='run')){const rp=runPaces(p);line(rp.have?'Running paces: '+['Z2','Z3','Z4','Z5'].map(z=>{const [a,b]=paceRange(z,rp);return `${runZName(z)} ${fmtPace(a,p)}-${fmtPace(b,p)}/${U(p)}`}).join(' | '):'Running: add a recent race time for pace targets.',9,'normal',3)}
   ZONES.forEach(z=>{const t=zoneTargets(z.k,p);line(`${z.k} ${z.name}: ${[t.power,t.hr,t.rpe].filter(Boolean).join(' | ')} | ${z.talk}`,9,'normal',3)});
   y+=8;
   for(const w of pl.weeks){
@@ -1115,7 +1393,8 @@ function makePDF(){
     for(const d of w.days){
       for(const it of d.items){
         let txt;
-        if(it.kind==='ride'){const main=it.steps.filter(s=>!/warm|cool/i.test(s.label)).map(s=>`${fmtMin(s.min)} ${s.label} (${s.z==='SS'?'SS':s.z})`);txt=`${it.title}, ${fmtH(it.hours)}: ${main.join('; ')}`}
+        if(it.kind==='run'){const main=it.steps.filter(s=>!/warm|cool/i.test(s.label)).map(s=>`${s.timed?fmtMin(s.min):fmtDist(s.dist,p)} ${s.label}`);txt=`${it.title}, ${fmtDist(it.miles,p)}: ${main.join('; ')}`}
+        else if(it.kind==='ride'){const main=it.steps.filter(s=>!/warm|cool/i.test(s.label)).map(s=>`${fmtMin(s.min)} ${s.label} (${s.z==='SS'?'SS':s.z})`);txt=`${it.title}, ${fmtH(it.hours)}: ${main.join('; ')}`}
         else if(it.kind==='strength')txt=`${it.title}, ${it.minutes} min: ${SPRESC[it.stage].sets}. ${SESS[it.which].map(x=>EX[x].name).join(', ')}`;
         else if(it.kind==='race')txt=`RACE DAY: ${it.title}`;
         else txt=it.title;
