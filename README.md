@@ -1,4 +1,4 @@
-# Switchback Ride Planner
+# WattFire Training Planner
 
 A cycling training planner for any event. A rider enters their details (age, experience, weekly hours, riding days, optional FTP and heart rate) and their event (type, date, expected finish time, elevation). The app builds a periodized plan: base, build, peak and taper.
 

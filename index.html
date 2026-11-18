@@ -1,4 +1,4 @@
-<title>Switchback Ride Planner</title>
+<title>WattFire Training Planner</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -179,7 +179,7 @@ input[type=text],input[type=number],input[type=date],select{font:inherit;font-we
   <div class="wrap">
     <div class="brand">
       <svg viewBox="0 0 26 18" aria-hidden="true"><path d="M1 16 L8 6 L12 11 L18 2 L25 16" fill="none" stroke="var(--accent)" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round"/></svg>
-      <b>Switchback</b>
+      <b>WattFire</b>
     </div>
     <div class="countdown" id="countdown"></div>
     <nav class="tabs" id="tabs" aria-label="Sections">
@@ -555,7 +555,7 @@ function eventTips(p){
 }
 
 /* ============ state ============ */
-const LS='switchback.v1';
+const LS='wattfire.v1';
 const state={view:'today',sel:null,exFilter:'all',plan:null,store:null,example:true,downloads:null};
 function loadStore(){try{const s=JSON.parse(localStorage.getItem(LS)||'null');if(s&&s.profile)return s}catch(e){}return null}
 function saveStore(){try{localStorage.setItem(LS,JSON.stringify(state.store))}catch(e){}}
@@ -907,7 +907,7 @@ document.addEventListener('click',e=>{
   else if(a==='ex'){state.exFilter='all';location.hash='#strength';setTimeout(()=>{const el=document.getElementById('ex-'+t.dataset.x);if(el)el.scrollIntoView({block:'start'})},30)}
   else if(a==='pdf'){try{offer(`training-plan-${dkey(state.plan.eventDate)}.pdf`,makePDF())}catch(err){toast('Couldn’t build the PDF.')}}
   else if(a==='csv'){offer(`training-calendar-${dkey(state.plan.eventDate)}.csv`,makeCSV())}
-  else if(a==='savejson'){offer('my-training-details.json',JSON.stringify({app:'switchback',version:1,profile:P(),done:state.store.done},null,2))}
+  else if(a==='savejson'){offer('my-training-details.json',JSON.stringify({app:'wattfire',version:1,profile:P(),done:state.store.done},null,2))}
   else if(a==='reset'){document.getElementById('reset-confirm').hidden=false}
   else if(a==='reset-no'){document.getElementById('reset-confirm').hidden=true}
   else if(a==='reset-yes'){try{localStorage.removeItem(LS)}catch(_){}state.store={profile:exampleProfile(),done:{},example:true};state.example=true;state.plan=generatePlan(state.store.profile);toast('Cleared');render(true)}
@@ -916,7 +916,7 @@ document.addEventListener('change',e=>{
   const t=e.target;
   if(t.dataset&&t.dataset.act==='done'){if(t.checked)state.store.done[t.dataset.k]=true;else delete state.store.done[t.dataset.k];if(!state.example)saveStore();render()}
   if(t.id==='f-load'&&t.files&&t.files[0]){
-    const r=new FileReader();r.onload=()=>{try{const j=JSON.parse(r.result);if(!j.profile||!j.profile.event)throw 0;state.store={profile:j.profile,done:j.done||{},example:false};state.example=false;state.plan=generatePlan(j.profile);saveStore();toast('Details loaded');location.hash='#today';render(true)}catch(_){toast('That file isn’t a Switchback details file.')}};r.readAsText(t.files[0]);
+    const r=new FileReader();r.onload=()=>{try{const j=JSON.parse(r.result);if(!j.profile||!j.profile.event)throw 0;state.store={profile:j.profile,done:j.done||{},example:false};state.example=false;state.plan=generatePlan(j.profile);saveStore();toast('Details loaded');location.hash='#today';render(true)}catch(_){toast('That file isn’t a WattFire details file.')}};r.readAsText(t.files[0]);
   }
 });
 document.addEventListener('submit',e=>{
