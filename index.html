@@ -163,6 +163,12 @@ input[type=text],input[type=number],input[type=date],select{font:inherit;font-we
 .days input{accent-color:var(--accent)}
 .err{color:var(--z6);font-weight:600}
 .ph-recover{background:var(--z1)}
+.split{display:flex;align-items:flex-end;gap:2px;height:90px;margin-top:10px;padding:6px;background:var(--sunk);border-radius:8px}
+.split span{flex:1;display:flex;flex-direction:column-reverse;height:100%;min-width:0}
+.split i{display:block}
+.sb-run{background:var(--z5)}.sb-bike{background:var(--z2)}
+.split i.sb-run{border-radius:2px 2px 0 0}
+.chip.v-ok{background:var(--z3);color:#fff}.chip.v-warn{background:var(--z4);color:#13201B}.chip.v-bad{background:var(--z6);color:#fff}.chip.v-unk{background:var(--sunk)}
 .sched{display:flex;flex-direction:column;margin-top:6px}
 .sched-row{display:grid;grid-template-columns:76px 1fr;gap:12px;padding:10px 0;border-top:1px solid var(--line)}
 .sched-row:first-child{border-top:0}
@@ -226,7 +232,7 @@ ol.how{margin:6px 0 0;padding-left:22px;display:flex;flex-direction:column;gap:6
 
 <script src="videos.js"></script>
 <script>
-const APP_VERSION='2026-11-18 · cross-training 2';
+const APP_VERSION='2026-11-18 · two-sport planner';
 /* ============ utilities ============ */
 const DAYN=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
 const DAYL=['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
@@ -475,6 +481,7 @@ function generatePlan(p){
   const evs=normEvents(p);
   if(!evs.length)return {error:'Add at least one event in Setup.'};
   let start=monday(parse(p.startDate||dkey(today())));
+  if(trainsBoth(p,evs))return finishPlan(p,evs,start,null,true);
   const As=evs.filter(e=>e.priority==='A'&&monday(e.d)>=start);
   if(!As.length)return {error:'Your A race is before the plan start date. Check the dates in Setup.'};
   const lastA=As[As.length-1],end=monday(lastA.d);
@@ -490,23 +497,38 @@ function generatePlan(p){
     const c=run?buildRunCycle(p,cycleStart,n,A,cc,str,notes):buildCycle(p,cycleStart,n,A,cc,str,notes);
     weeks.push(...c.weeks);carry=c.carry;cycleStart=addDays(aw,7);
   }
-  const k=(+p.age>=50||p.experience==='new')?3:4;
   weeks.forEach((w,i)=>{w.i=i});
-  if(p.run&&p.run.defaulted&&(evs.some(isRun)||p.sports==='both'))notes.push(`Running uses starter numbers (up to ${fmtDist(p.run.maxMiles,p)} a week) because the Running section in Setup was left blank. Add your own numbers there for a better fit.`);
-  const hybrid=trainsBoth(p,evs);
-  if(hybrid)weeks.forEach(w=>crossTrain(p,w));
   for(const e of evs.filter(e=>e.priority!=='A')){
     const w=weeks.find(w=>e.d>=w.start&&e.d<addDays(w.start,7));
     if(w){overlayRace(p,w,e,weeks[w.i+1]);
       if(isRun(e)!==(w.sport==='run')&&+e.durationH>=2)notes.push(`${e.name||'An event'} is a ${e.priority} race during a ${w.sport==='run'?'running':'cycling'} block, so it only gets a few ${isRun(e)?'runs':'rides'} each week. To build properly for it, mark it as an A race in Setup.`)}
     else if(e.d>addDays(weeks[weeks.length-1].start,6))notes.push(`${e.name||'An event'} is after your last A race, so it isn’t in the plan. Mark it as an A race to train for it.`);
   }
-  weeks.forEach(w=>{w.total=w.days.reduce((s,d)=>s+d.items.filter(x=>x.kind==='ride'||x.kind==='run').reduce((a,x)=>a+x.hours,0),0);w.miles=w.days.reduce((s,d)=>s+d.items.filter(x=>x.kind==='run').reduce((a,x)=>a+x.miles,0),0)});
-  const t=today();
-  const nextA=As.find(e=>e.d>=t)||lastA;
-  return {weeks,start,eventDate:lastA.d,mainEvent:nextA,events:evs,N:weeks.length,notes,k,hybrid};
+  return finishPlan(p,evs,start,{weeks,notes,anchors:As},false);
 }
-function buildCycle(p,start,N,A,carry,str,notes){
+function finishPlan(p,evs,start,res,hybrid){
+  let notes=res?res.notes:[];
+  if(hybrid){
+    const anchors=[...trackAnchors(evs,true),...trackAnchors(evs,false)].filter(e=>monday(e.d)>=start);
+    if(!anchors.length)return {error:'Add an A or B race after your plan start date in Setup.'};
+    const end=monday(anchors.reduce((a,e)=>e.d>a?e.d:a,anchors[0].d));
+    if(Math.round((end-start)/(7*864e5))+1>60){start=addDays(end,-59*7);notes.push(`Your last main race is more than a year away, so the plan starts ${fmtShort(start)}.`)}
+    const h=generateHybrid(p,evs.filter(e=>monday(e.d)>=start),start,notes);
+    res={weeks:h.weeks,notes,anchors:h.anchors};
+    h.weeks.forEach((w,i)=>{w.i=i});
+    if(!h.weeks.length)return {error:'Add an A or B race after your plan start date in Setup.'};
+  }
+  const weeks=res.weeks;
+  if(p.run&&p.run.defaulted&&(evs.some(isRun)||p.sports==='both'))notes.push(`Running uses starter numbers (up to ${fmtDist(p.run.maxMiles,p)} a week) because the Running section in Setup was left blank. Add your own numbers there for a better fit.`);
+  weeks.forEach(w=>{w.total=w.days.reduce((s,d)=>s+d.items.filter(isSess).reduce((a,x)=>a+x.hours,0),0);w.miles=w.days.reduce((s,d)=>s+d.items.filter(x=>x.kind==='run').reduce((a,x)=>a+x.miles,0),0);w.runH=w.days.reduce((s,d)=>s+d.items.filter(x=>x.kind==='run').reduce((a,x)=>a+x.hours,0),0);w.bikeH=w.total-w.runH});
+  const t=today(),A=res.anchors,last=A[A.length-1];
+  const nextMain=A.find(e=>e.d>=t&&e.priority==='A')||A.find(e=>e.d>=t)||last;
+  const pl={weeks,start,eventDate:last.d,mainEvent:nextMain,events:evs,N:weeks.length,notes,k:(+p.age>=50||p.experience==='new')?3:4,hybrid};
+  pl.goals=goalAnalysis(p,pl);
+  return pl;
+}
+function buildCycle(p,start,N,A,carry,str,notes,opts){
+  opts=opts||{};const AV=ws=>opts.avail?opts.avail(ws):availAt(p,ws);
   const dur=A.durationH,fam=eventFamily(A),age=+p.age||40;
   const k=(age>=50||p.experience==='new')?3:4;
   const pre=postWeeks(carry,N);
@@ -518,15 +540,15 @@ function buildCycle(p,start,N,A,carry,str,notes){
   let baseW=Math.max(0,R-peakW-buildW);
   if(carry&&carry.load&&R<12){buildW+=baseW;baseW=0}
   const longMax=fam==='ultra'?Math.min(dur*0.75,6.5):fam==='endurance'?Math.min(Math.max(dur*1.1,2.5),5):Math.min(Math.max(dur*2,2),3.5);
-  const av0=availAt(p,start);
+  const av0=AV(start);
   const h0=carry&&carry.load?Math.max(2,carry.load*0.85):Math.min(Math.max(2,av0.maxHours),Math.max(2,+p.currentHours||3));
   const longStart=carry&&carry.long?clamp(carry.long*0.8,1,longMax):clamp(+p.longest||1.5,1,longMax);
   const longShare=fam==='ultra'?0.55:0.42;
   const phases=[['recover',0,pre],['base',pre,baseW],['build',pre+baseW,buildW],['peak',pre+baseW+buildW,peakW],['taper',pre+R,taperW]];
   const out=[];let lastLoad=h0,lastLong=longStart,maxLongHit=0,indoorCapped=false;
   for(let i=0;i<N;i++){
-    const ws=addDays(start,i*7),av=availAt(p,ws),ci=checkinEffect(p,ws);
-    const maxH=Math.max(2,av.maxHours);
+    const ws=addDays(start,i*7),av=AV(ws),ci=checkinEffect(p,ws);
+    const maxH=Math.max(1,opts.capH?Math.min(av.maxHours,opts.capH(ws)):av.maxHours);
     const ph=phases.find(([,s,l])=>i>=s&&i<s+l)||['taper',N-1,1];
     const phase=ph[0],prog=ph[2]>1?(i-ph[1])/(ph[2]-1):1;
     const isRace=i===N-1;
@@ -552,7 +574,7 @@ function buildCycle(p,start,N,A,carry,str,notes){
     }
     if(av.setting==='indoor'&&long>2.5){long=2.5;indoorCapped=true}
     if(!isRace)maxLongHit=Math.max(maxLongHit,long);
-    const wk={phase,prog,recovery,isRace,hours,long,start:ws,fam,ev:A,avail:av,reset:ci.reset,first:!carry,li,sport:'bike'};
+    const wk={phase,prog,recovery,isRace,hours,long,start:ws,fam,ev:A,avail:av,reset:ci.reset,first:!carry,li,sport:'bike',noStrength:opts.noStrength&&opts.noStrength(ws)};
     wk.days=isRace?raceWeek(p,wk,A):buildWeek(p,wk,()=>str.n++);
     out.push(wk);
   }
@@ -615,6 +637,7 @@ function buildWeek(p,wk,nextStr){
   return days;
 }
 function assignStrength(p,wk,days,D,longDay,hardDays,b2bOn,after,nextStr){
+  if(wk.noStrength)return;
   const cd=(a,b)=>{const x=Math.abs(a-b);return Math.min(x,7-x)};
   if(p.strength!=='none'){
     let nS=wk.phase==='base'?2:wk.phase==='build'?(D.length>=5&&wk.prog<0.5?2:1):wk.phase==='peak'?1:0;
@@ -663,6 +686,150 @@ function postWeeks(carry,N){
   const e=carry.ev,big=e&&(e.type==='marathon'||e.type==='trail'||+e.durationH>=8);
   return big&&N>=8?2:1;
 }
+/* ============ two-sport planner ============ */
+/* Running and cycling each get their own periodized track toward their own races. Each week's time budget is
+   split by how important and how close each sport's next race is; the tracks are then merged into one calendar. */
+const PRIO_W={A:1,B:0.6,C:0.25};
+function sportWeight(evs,ws,run){
+  let w=0;
+  for(const e of evs){if(isRun(e)!==run||e.d<ws)continue;const wk=(e.d-ws)/(7*864e5);w=Math.max(w,(PRIO_W[e.priority]||0.25)*(wk<=12?1:wk<=24?0.75:0.5))}
+  return w||0.2;
+}
+function trackAnchors(evs,run){const s=evs.filter(e=>isRun(e)===run),A=s.filter(e=>e.priority==='A');return A.length?A:s.filter(e=>e.priority==='B')}
+function buildTrack(p,start,anchors,run,str,notes,opts){
+  const weeks=[];let carry=null,cs=start;
+  for(const A of anchors){
+    const aw=monday(A.d);if(aw<cs)continue;
+    const n=Math.round((aw-cs)/(7*864e5))+1;
+    const c=run?buildRunCycle(p,cs,n,A,carry,str,notes,opts):buildCycle(p,cs,n,A,carry,str,notes,opts);
+    weeks.push(...c.weeks);carry=c.carry;cs=addDays(aw,7);
+  }
+  return weeks;
+}
+function spreadDays(D,fixed,n){
+  const cd=(a,b)=>{const x=Math.abs(a-b);return Math.min(x,7-x)};
+  const out=fixed.filter(d=>D.includes(d));
+  while(out.length<n){let best=null,bs=-1;for(const d of D){if(out.includes(d))continue;const s=out.length?Math.min(...out.map(o=>cd(o,d))):9;if(s>bs){bs=s;best=d}}if(best==null)break;out.push(best)}
+  return out.sort((a,b)=>a-b);
+}
+const longRunDayFor=(p,av)=>{const pref=p.longRunDay!=null&&p.longRunDay!==''?+p.longRunDay:(av.longDay===5?6:5);if(av.days[pref]&&pref!==av.longDay)return pref;const alt=[6,5,4,3,2,1,0].find(i=>av.days[i]&&i!==av.longDay);return alt==null?pref:alt};
+function generateHybrid(p,evs,start,notes){
+  const str={n:0},aR=trackAnchors(evs,true),aB=trackAnchors(evs,false);
+  const E=paceMid('Z2',runPaces(p))/60,totH=ws=>availAt(p,ws).maxHours;
+  const share=ws=>{const r=sportWeight(evs,ws,true),b=sportWeight(evs,ws,false);return clamp(r/(r+b),0.2,0.85)};
+  const minRun=ws=>{const nx=aR.find(e=>e.d>=ws);if(!nx)return 2;return nx.priority==='A'&&['marathon','half'].includes(nx.type)?4:3};
+  const idx=ws=>Math.round((ws-start)/(7*864e5));
+  const runAvail=ws=>{
+    const av=availAt(p,ws),D=[0,1,2,3,4,5,6].filter(i=>av.days[i]);
+    const n=clamp(Math.round(D.length*share(ws)+0.4),Math.min(minRun(ws),D.length),Math.max(1,D.length-(aB.length&&D.length>3?1:0)));
+    const lr=longRunDayFor(p,av),pool=D.filter(d=>d!==av.longDay);
+    const days=spreadDays(pool.length>=n?pool:D,[lr],n);
+    return {...av,days:[0,1,2,3,4,5,6].map(i=>days.includes(i)),longDay:lr};
+  };
+  const runTrack=aR.length?buildTrack(p,start,aR,true,str,notes,{avail:runAvail,capMi:ws=>Math.max(5,totH(ws)*share(ws)*60/(E*0.95))}):[];
+  const runHrs=i=>{const w=runTrack[i];return w?w.days.reduce((a,d)=>a+d.items.filter(x=>x.kind==='run').reduce((s,x)=>s+x.hours,0),0):0};
+  const bikeAvail=ws=>{
+    const av=availAt(p,ws),D=[0,1,2,3,4,5,6].filter(i=>av.days[i]),rw=runTrack[idx(ws)];
+    if(!rw)return av;
+    const runDays=D.filter(i=>rw.days[i].items.some(x=>x.kind==='run'||x.kind==='race'));
+    const free=D.filter(i=>!runDays.includes(i));
+    const want=Math.max(1,Math.round(D.length*(1-share(ws))+0.4));
+    if(free.length<want&&p.doubles){
+      for(const i of runDays){
+        if(free.length>=want)break;
+        const easy=rw.days[i].items.every(x=>x.kind!=='run'||['easy','recovery','strides','runwalk'].includes(x.type));
+        const beforeLong=rw.days[(i+1)%7].items.some(x=>['long','mplong'].includes(x.type));
+        if(easy&&!beforeLong)free.push(i);
+      }
+    }
+    if(!free.length)free.push(av.longDay);
+    free.sort((a,b)=>a-b);
+    return {...av,days:[0,1,2,3,4,5,6].map(i=>free.includes(i)),longDay:free.includes(av.longDay)?av.longDay:free[free.length-1]};
+  };
+  const bikeTrack=aB.length?buildTrack(p,start,aB,false,str,notes,{avail:bikeAvail,capH:ws=>Math.max(1,totH(ws)-runHrs(idx(ws))),noStrength:ws=>!!runTrack[idx(ws)]}):[];
+  for(const e of evs){
+    if(aR.includes(e)||aB.includes(e))continue;
+    const tr=isRun(e)?runTrack:bikeTrack,i=tr.findIndex(w=>e.d>=w.start&&e.d<addDays(w.start,7));
+    if(i>=0)overlayRace(p,tr[i],e,tr[i+1]);else e.loose=true;
+  }
+  const weeks=[],N=Math.max(runTrack.length,bikeTrack.length);
+  for(let i=0;i<N;i++){
+    const rw=runTrack[i],bw=bikeTrack[i],ws=addDays(start,i*7);let w;
+    if(rw&&bw){
+      const days=rw.days.map((d,j)=>({date:d.date,items:[...d.items.filter(x=>x.kind!=='rest'),...bw.days[j].items.filter(x=>x.kind!=='rest')]}));
+      w={...(share(ws)>=0.5?rw:bw),days,sub:{run:rw,bike:bw}};
+    }else{w={...(rw||bw)};w.days=w.days.map(d=>({date:d.date,items:d.items.filter(x=>x.kind!=='rest')}));crossTrain(p,w)}
+    w.share=share(ws);
+    if(rw&&bw){const nb=evs.find(e=>!isRun(e)&&e.d>=ws);balanceIntensity(w,share(ws)>=0.5?'run':'ride',!!(nb&&(nb.d-ws)/(7*864e5)<=10))}
+    resolveRaceDays(w);
+    trimHybrid(w,totH(ws));
+    w.days.forEach(d=>{if(!d.items.length)d.items.push({kind:'rest',title:'Rest day'})});
+    weeks.push(w);
+  }
+  const build=weeks.filter(w=>!w.recovery&&!['taper','recover'].includes(w.phase));
+  if(build.length){const avg=build.reduce((a,w)=>a+w.days.reduce((s,d)=>s+d.items.filter(isSess).reduce((t,x)=>t+x.hours,0),0),0)/build.length,H=availAt(p,start).maxHours;
+    if(avg<H*0.8)notes.push(`Your plan uses about ${fmtH(avg)} of your ${fmtH(H)} a week, because each training day holds one sport. ${p.doubles?'Add another training day':'Turn on “I can train twice in one day” in Setup, or add a training day,'} to use more of your time.`)}
+  for(const e of evs.filter(e=>e.loose)){const wi=weeks.findIndex(w=>e.d>=w.start&&e.d<addDays(w.start,7));if(wi>=0)overlayRace(p,weeks[wi],e,weeks[wi+1]);delete e.loose}
+  return {weeks,anchors:[...aR,...aB].sort((a,b)=>a.d-b.d)};
+}
+/* Coordinate hard days across both sports: the priority sport keeps its key sessions; the other sport keeps at most
+   one hard session (when its race is within 10 weeks), never next to a key day, and the week stays at 3 hard sessions or fewer. */
+const HARD={ride:['tempo','sweetspot','threshold','vo2','climbs','anaerobic','racepace','taperSharp'],run:['hills','threshold','intervals','timetrial','sharpen']};
+const LONGT={ride:['long','racesim','b2b'],run:['long','mplong']};
+function balanceIntensity(w,prim,secRaceSoon){
+  const ctxOf=x=>x.ctx;
+  const isHard=x=>isSess(x)&&HARD[x.kind].includes(x.type),isKey=x=>isSess(x)&&(isHard(x)||LONGT[x.kind].includes(x.type));
+  const easyOf=x=>x.kind==='ride'?makeRide('endurance',Math.min(x.hours,1.5),ctxOf(x)):makeRun('easy',Math.min(x.miles,6),ctxOf(x));
+  const keyDay=i=>i>=0&&i<7&&w.days[i].items.some(x=>isKey(x)&&x.kind===prim);
+  let hardCount=w.days.reduce((a,d)=>a+d.items.filter(x=>isHard(x)&&x.kind===prim).length,0),kept=0;
+  w.days.forEach((d,i)=>{d.items=d.items.map(x=>{
+    if(x.kind===prim||!isHard(x))return x;
+    const ok=secRaceSoon&&kept<1&&hardCount<3&&!keyDay(i-1)&&!keyDay(i+1)&&!d.items.some(y=>y!==x&&isKey(y));
+    if(ok){kept++;hardCount++;return x}
+    const e=easyOf(x);if(x.cross){e.title='Cross-training: '+e.title;e.cross=true}return e;
+  })});
+}
+/* On a race day only the race happens; the other sport also stays off the day before and after. */
+function resolveRaceDays(w){
+  w.days.forEach((d,i)=>{
+    const r=d.items.find(x=>x.kind==='race');if(!r)return;
+    const keep=isRun(r.ev)?'run':'ride';
+    d.items=d.items.filter(x=>x.kind==='race');
+    for(const dd of [w.days[i-1],w.days[i+1]])if(dd)dd.items=dd.items.filter(x=>x.kind===keep||x.kind==='race');
+  });
+}
+/* Keep the merged week within the time budget by dropping easy rides first (doubled-up days before others). */
+function trimHybrid(w,H){
+  const tot=()=>w.days.reduce((a,d)=>a+d.items.filter(isSess).reduce((s,x)=>s+x.hours,0),0);
+  const cand=[];
+  w.days.forEach(d=>d.items.forEach(x=>{if(x.kind==='ride'&&['endurance','recovery'].includes(x.type))cand.push({d,x,dbl:d.items.filter(isSess).length>1?1:0})}));
+  cand.sort((a,b)=>b.dbl-a.dbl||a.x.hours-b.x.hours);
+  for(const c of cand){if(tot()<=H*1.1)break;c.d.items=c.d.items.filter(y=>y!==c.x)}
+}
+/* What a goal time needs, compared with current fitness and the plan. Marathon mileage uses Tanda (2011). */
+function goalAnalysis(p,pl){
+  const out=[],rp=runPaces(p),r=p.run||{};
+  for(const e of pl.events){
+    const g=parseTime(e.goalTime);if(!g)continue;
+    if(!(isRun(e)&&RACE_M[e.type])){out.push({e,g,run:false});continue}
+    const D=RACE_M[e.type],mi=D/1609.344;
+    const pred=rp.have?parseTime(r.raceTime)*Math.pow(D/RACE_M[r.raceDist],1.06):null;
+    const mEq=g*Math.pow(42195/D,1.06)/42.195,P=mEq*1.18,rhs=mEq-17.1-0.55*P;
+    const Kmi=rhs>0?Math.max(0,-Math.log(Math.min(1,rhs/140))/0.0053)/1.609344:Infinity;
+    const wi=pl.weeks.findIndex(w=>e.d>=w.start&&e.d<addDays(w.start,7));
+    const prev=wi>0?pl.weeks.slice(Math.max(0,wi-8),wi):[];
+    const planMi=prev.length?prev.reduce((a,w)=>a+(w.miles||0),0)/prev.length:0;
+    const longest=Math.max(0,...pl.weeks.slice(0,Math.max(0,wi)).flatMap(w=>w.days.flatMap(d=>d.items.filter(x=>x.kind==='run').map(x=>x.miles))));
+    const gap=pred?(pred-g)/pred:null,ratio=Kmi?planMi/Kmi:1;
+    let verdict,cls;
+    if(gap!=null&&gap<=0.02&&ratio>=0.75){verdict='Realistic';cls='ok'}
+    else if((gap==null||gap<=0.06)&&ratio>=0.6){verdict=gap==null?'Can’t tell yet':'Ambitious';cls=gap==null?'unk':'warn'}
+    else{verdict='Unlikely this season';cls='bad'}
+    out.push({e,g,run:true,mEqTime:g*Math.pow(42195/D,1.06),goalPace:g/mi,Treq:3600/(D*Math.pow(3600/g,1/1.06)/1609.344),Kmi,planMi,longest,pred,gap,verdict,cls});
+  }
+  return out;
+}
+
 /* ============ cross-training ============ */
 function trainsBoth(p,evs){
   const s=p.sports||'auto';
@@ -777,6 +944,8 @@ const RUN={
  threshold:{title:'Threshold run',zone:'Z4',purpose:'Comfortably hard running near your threshold. Raises the pace you can hold for a long time, key for 10K to marathon.',tips:['Comfortably hard: a pace you could race for about an hour.','Even pacing. The last rep should feel like the first.']},
  intervals:{title:'Intervals',zone:'Z5',purpose:'Hard repeats at about 5K effort. They raise your aerobic ceiling and make race pace feel easier.',tips:['Run every rep at the same pace. Don’t race the first one.','A track or flat path makes pacing easier.']},
  sharpen:{title:'Sharpening run',zone:'Z5',purpose:'A few short, quick reps to keep your legs sharp while total running drops before race day.',tips:['Fast and relaxed. Finish feeling fresher than you started.']},
+ runwalk:{title:'Run-walk',zone:'Z2',purpose:'Easy running broken up with short walks. It lets your feet, tendons and bones adapt to running while your heart and lungs are already fit from riding.',tips:['Run easy for 4 minutes, walk 1 minute, repeat. The walks are part of the workout, not a failure.','Soft surfaces help. Stop if your heel, arch or hip flexor hurts.']},
+ timetrial:{title:'5K time trial',zone:'Z5',purpose:'A hard, evenly paced 5K to measure your running fitness. Enter the result in a check-in and every pace in your plan updates.',tips:['Flat route or track. Start a little slower than you think and finish strong.','Enter the time in your next check-in under New race result.']},
  shakeout:{title:'Shakeout run',zone:'Z2',purpose:'A short easy run to loosen up before race day.',tips:['Keep it short and easy. Lay out your race kit tonight.']},
 };
 function buildRunSteps(type,mi,ctx){
@@ -799,6 +968,8 @@ function buildRunSteps(type,mi,ctx){
     case 'threshold':structured(()=>{if(pr<0.34)reps(4,1,'Z4',1);else if(pr<0.67)reps(3,1.5,'Z4',1.5);else D(clamp(Math.round(mi*0.4),2,5),'Z4','Continuous threshold run')});break;
     case 'intervals':structured(()=>{if(pr<0.34)reps(6,0.5,'Z5',2.5);else if(pr<0.67)reps(5,0.62,'Z5',3);else reps(4,0.75,'Z5',3)});break;
     case 'sharpen':structured(()=>reps(4,0.5,'Z5',2.5));break;
+    case 'runwalk':{const tot=mi*paceMid('Z2',rp)/60,n=Math.max(3,Math.round((tot-5)/5));T(5,'Z1','Brisk walk to warm up');for(let i=0;i<n;i++){T(4,'Z2','Run easy');T(1,'Z1','Walk')}break}
+    case 'timetrial':D(2,'Z2','Warm up, easy, with 3 short pickups');D(3.107,'Z5','5K time trial: even, hard effort');D(1,'Z2','Cool down, easy');break;
     case 'shakeout':D(Math.max(1.5,mi-0.25),'Z2','Easy');for(let i=0;i<4;i++){T(20/60,'Z7','Stride: quick and relaxed');T(1,'Z1','Walk back')}break;
     default:D(mi,'Z2','Easy');
   }
@@ -838,8 +1009,10 @@ function buildRunWeek(p,wk,nextStr){
   let D=av.days.map((v,i)=>v?i:-1).filter(i=>i>=0);if(!D.length)D=[1,3,5];
   const days=Array.from({length:7},(_,i)=>({date:addDays(wk.start,i),items:[]}));
   const longDay=D.includes(av.longDay)?av.longDay:D[D.length-1];
-  const nHard=wk.recovery?0:wk.phase==='taper'?1:(D.length>=5||wk.phase!=='base')&&D.length>=4?2:1;
-  const hardDays=pickHardDays(D,longDay,wk.recovery?[]:keyRunSessions(wk.phase,wk.prog,ev).slice(0,nHard));
+  const nHard=wk.recovery||wk.gentle?0:wk.phase==='taper'?1:(D.length>=5||wk.phase!=='base')&&D.length>=4?2:1;
+  let keys=wk.recovery||wk.gentle?[]:keyRunSessions(wk.phase,wk.prog,ev).slice(0,nHard);
+  if(wk.timeTrial)keys=['timetrial',...keys.slice(1)];
+  const hardDays=pickHardDays(D,longDay,keys);
   const rem=D.filter(d=>d!==longDay&&!hardDays.some(h=>h.d===d));
   const after=(longDay+1)%7;
   const recDay=D.length>=6&&rem.includes(after)?after:null;
@@ -847,14 +1020,14 @@ function buildRunWeek(p,wk,nextStr){
   const ctx={phase:wk.phase,prog:wk.prog,ev,rp:wk.rp,setting:av.setting};
   const longType=wk.phase==='peak'&&!wk.recovery&&['marathon','half'].includes(ev.type)?'mplong':'long';
   const put=(d,type,mi)=>days[d].items.push(makeRun(type,mi,ctx));
-  put(longDay,longType,wk.long);
+  put(longDay,wk.gentle&&wk.li<3?'runwalk':longType,wk.long);
   const q=clamp(wk.miles*0.17,4,9);
-  hardDays.forEach(h=>put(h.d,h.type,q));
+  hardDays.forEach(h=>put(h.d,h.type,h.type==='timetrial'?6.5:q));
   let used=wk.long+q*hardDays.length;
   if(recDay!=null){put(recDay,'recovery',3);used+=3}
   if(easyDays.length){
-    const each=clamp((wk.miles-used)/easyDays.length,3,wk.phase==='taper'?5:10);
-    easyDays.forEach((d,i)=>put(d,i===0&&!wk.recovery&&wk.phase!=='taper'?'strides':'easy',each));
+    const each=clamp((wk.miles-used)/easyDays.length,wk.gentle?1.5:3,wk.phase==='taper'?5:10);
+    easyDays.forEach((d,i)=>put(d,wk.gentle&&wk.li<3?'runwalk':i===0&&!wk.recovery&&wk.phase!=='taper'?'strides':'easy',wk.gentle?Math.min(each,4):each));
   }
   const tot=()=>days.reduce((a,d)=>a+d.items.filter(x=>x.kind==='run').reduce((s,x)=>s+x.miles,0),0);
   let runs=days.filter(d=>d.items.length).length;
@@ -880,7 +1053,8 @@ function runRaceWeek(p,wk,A){
   }
   return days;
 }
-function buildRunCycle(p,start,N,A,carry,str,notes){
+function buildRunCycle(p,start,N,A,carry,str,notes,opts){
+  opts=opts||{};const AV=ws=>opts.avail?opts.avail(ws):availAt(p,ws);
   const r=p.run||{},age=+p.age||40,k=(age>=50||p.experience==='new')?3:4,rp=runPaces(p);
   const longRace=A.type==='marathon'||A.type==='trail';
   const pre=postWeeks(carry,N),R0=N-pre;
@@ -894,13 +1068,14 @@ function buildRunCycle(p,start,N,A,carry,str,notes){
   const raceMi=RUN_TYPES[A.type].mi||Math.max(13,(+A.durationH||5)*60/(E*1.25));
   const longMax=A.type==='marathon'?Math.min(20,180/E):A.type==='half'?Math.min(13,150/E):A.type==='10k'?Math.min(10,100/E):A.type==='5k'?Math.min(8,80/E):Math.min(raceMi*0.6,240/(E*1.15));
   const share=A.type==='marathon'||A.type==='trail'?0.4:0.33;
-  const av0=availAt(p,start);
-  const w0=carry&&carry.load?carry.load*0.85:clamp(+r.curMiles||10,5,Math.max(5,av0.maxMiles));
+  const av0=AV(start),cur=r.curMiles===''||r.curMiles==null?10:+r.curMiles;
+  const careful=!!p.runInjury||cur<10,rampF=careful?1.08:1.1,rampA=careful?0.75:1,longStep=careful?1:2;
+  const w0=carry&&carry.load?carry.load*0.85:clamp(cur,careful&&+p.currentHours>=5?8:5,Math.max(5,av0.maxMiles));
   const long0=carry&&carry.long?clamp(carry.long*0.8,3,longMax):clamp(+r.longest||4,3,longMax);
   const phases=[['recover',0,pre],['base',pre,baseW],['build',pre+baseW,buildW],['peak',pre+baseW+buildW,peakW],['taper',pre+R,taperW]];
   const out=[];let last=w0,lastLong=long0,maxLongHit=0;
   for(let i=0;i<N;i++){
-    const ws=addDays(start,i*7),av=availAt(p,ws),ci=checkinEffect(p,ws),maxW=Math.max(8,av.maxMiles);
+    const ws=addDays(start,i*7),av=AV(ws),ci=checkinEffect(p,ws),maxW=Math.max(5,opts.capMi?Math.min(av.maxMiles,opts.capMi(ws)):av.maxMiles);
     const ph=phases.find(([,s,l])=>i>=s&&i<s+l)||['taper',N-1,1];
     const phase=ph[0],prog=ph[2]>1?(i-ph[1])/(ph[2]-1):1,isRace=i===N-1,li=i-pre,ti=i-(pre+R);
     let recovery=phase==='recover'||(phase!=='taper'&&li>0&&(li+1)%k===0&&li!==R-1);
@@ -916,12 +1091,12 @@ function buildRunCycle(p,start,N,A,carry,str,notes){
       const ramp=baseW+buildW>1?Math.min(1,Math.max(0,li)/(baseW+buildW-1)):1;
       let target=phase==='peak'?maxW:w0+(maxW-w0)*ramp;
       target=Math.min(maxW,target*ci.scale);
-      miles=Math.max(Math.min(target,last*1.1+1),Math.min(w0,maxW)*0.85);last=miles;
+      miles=Math.max(Math.min(target,last*rampF+rampA),Math.min(w0,maxW)*0.85);last=miles;
       const lp=R>1?Math.min(1,Math.max(0,li)/(R-1)):1;
-      long=Math.max(3,Math.min(long0+(longMax-long0)*lp,miles*share,lastLong+2));lastLong=long;
+      long=Math.max(3,Math.min(long0+(longMax-long0)*lp,miles*share,lastLong+longStep));lastLong=long;
     }
     if(!isRace)maxLongHit=Math.max(maxLongHit,long);
-    const wk={phase,prog,recovery,isRace,miles,long,start:ws,fam:eventFamily(A),ev:A,avail:av,reset:ci.reset,first:!carry,li,rp,sport:'run'};
+    const wk={phase,prog,recovery,isRace,miles,long,start:ws,fam:eventFamily(A),ev:A,avail:av,reset:ci.reset,first:!carry,li,rp,sport:'run',gentle:!carry&&careful&&li<4,timeTrial:!carry&&!rp.have&&li===4&&!recovery&&phase!=='taper',noStrength:opts.noStrength&&opts.noStrength(ws)};
     wk.days=isRace?runRaceWeek(p,wk,A):buildRunWeek(p,wk,()=>str.n++);
     out.push(wk);
   }
@@ -1078,7 +1253,7 @@ function vToday(){
   html+=day.items.map((it,idx)=>itemCard(it,day,week,isToday,idx)).join('');
   return html;
 }
-function phaseName(w){if(w.isRace)return 'Race week';if(w.phase==='taper')return 'Taper';if(w.phase==='recover')return 'Post-race recovery';const n={base:'Base',build:'Build',peak:'Peak'}[w.phase];if(w.reset)return `${n} · easier week after time off`;return w.recovery?`${n} · recovery week`:n}
+function phaseName(w){if(w.sub)return `Run: ${phaseName(w.sub.run)} · Bike: ${phaseName(w.sub.bike)}`;if(w.isRace)return 'Race week';if(w.phase==='taper')return 'Taper';if(w.phase==='recover')return 'Post-race recovery';const n={base:'Base',build:'Build',peak:'Peak'}[w.phase];if(w.reset)return `${n} · easier week after time off`;return w.recovery?`${n} · recovery week`:n}
 const prioChip=pr=>`<span class="chip prio-${pr}">${pr} race</span>`;
 const selOpt=(v,cur,l)=>`<option value="${v}" ${String(cur)===String(v)?'selected':''}>${l}</option>`;
 function itemCard(it,day,week,isToday,idx){
@@ -1165,6 +1340,7 @@ function vPlan(){
   h+=`</div><div class="legend"><span><i class="ph-base"></i>Base: aerobic foundation, heavy strength</span><span><i class="ph-build"></i>Build: harder intervals</span><span><i class="ph-peak"></i>Peak: race-specific</span><span><i class="ph-taper"></i>Taper: freshen up</span>${segs.some(g=>g.ph==='recover')?'<span><i class="ph-recover"></i>Recover after an A race</span>':''}</div></div>`;
   h+=`<div class="card"><div class="row" style="justify-content:space-between"><div class="eyebrow">Race schedule</div><a class="small" href="#setup">Edit races</a></div>
     <div class="sched">${evs.map(e=>{const wk=Math.round((monday(e.d)-monday(t))/(7*864e5));return `<div class="sched-row"><div class="sched-when"><span class="mono">${fmtShort(e.d)}</span><span class="small muted">${e.d<t?'done':wk<=0?'this week':wk+' wk'}</span></div><div style="min-width:0"><div class="row" style="gap:8px"><b>${esc(e.name)}</b>${prioChip(e.priority)}</div><div class="target">${esc(typeLabel(e.type))}${e.durationH?` · about ${fmtH(+e.durationH)}`:''}. ${esc(PRIO[e.priority])}</div></div></div>`}).join('')}</div></div>`;
+  h+=whyCard(p,pl);
   const chs=(p.changes||[]).slice().sort((a,b)=>a.from<b.from?-1:1);
   const setL={indoor:'mostly indoors',outdoor:'mostly outdoors',mixed:'indoors and out'};
   h+=`<div class="card"><div class="row" style="justify-content:space-between"><div class="eyebrow">Schedule and check-ins</div><a class="btn small" href="#checkin">Check in now</a></div>
@@ -1188,6 +1364,29 @@ function vPlan(){
   });
   h+=`</div></section>`;
   return h;
+}
+function whyCard(p,pl){
+  const goals=pl.goals||[];
+  if(!pl.hybrid&&!goals.length&&!p.runInjury)return '';
+  let h=`<div class="card"><div class="eyebrow">Why your plan looks like this</div><div style="margin-top:6px">`;
+  if(pl.hybrid){
+    const maxH=Math.max(...pl.weeks.map(w=>w.total),1);
+    h+=`<div class="principle"><h3>Running and cycling share your week</h3><p>Each sport builds toward its own races. Every week, your time is split by how important and how close each sport’s next race is, so the sport with the nearer or bigger race gets more. Long runs and key running workouts stay runs; cycling never replaces them.</p>
+    <div class="split" role="img" aria-label="Weekly hours: running and cycling">${pl.weeks.map(w=>`<span title="Week ${w.i+1}: ${fmtH(w.runH)} running, ${fmtH(w.bikeH)} cycling"><i class="sb-bike" style="height:${(w.bikeH/maxH*100).toFixed(1)}%"></i><i class="sb-run" style="height:${(w.runH/maxH*100).toFixed(1)}%"></i></span>`).join('')}</div>
+    <div class="legend"><span><i class="sb-run"></i>Running hours</span><span><i class="sb-bike"></i>Cycling hours</span><span>Week 1 → race weeks</span></div></div>`;
+  }
+  if(p.runInjury||(p.run&&(+p.run.curMiles||0)<10&&pl.events.some(isRun)))h+=`<div class="principle"><h3>Running builds carefully</h3><p>${p.runInjury?'Because you’ve had running injuries, ':'Because you’re starting from low running mileage, '}weekly running grows about 8% a week (well under the jumps linked to injury), long runs add about a mile at a time, and the first weeks use run-walk. Your fitness from cycling will feel ready sooner than your feet, tendons and bones are. A sports physical therapist can check old injuries before mileage climbs.</p></div>`;
+  for(const a of goals){
+    if(!a.run){h+=`<div class="principle"><h3>${esc(a.e.name)}: goal ${fmtHMS(a.g)}</h3><p>Bike race times depend heavily on the course, so the app can’t check this goal directly. The plan builds the duration and intensity for a ${fmtH(a.g/3600)} effort${a.e.priority==='A'?'':`, while ${esc(pl.mainEvent.name)} gets priority`}.</p></div>`;continue}
+    const uu=U(p);
+    h+=`<div class="principle"><div class="row" style="justify-content:space-between"><h3>${esc(a.e.name)}: goal ${fmtHMS(a.g)}</h3><span class="chip v-${a.cls}">${a.verdict}</span></div>
+    <ul class="tips"><li>Goal pace: <b class="mono">${fmtPace(a.goalPace,p)} /${uu}</b>. Threshold pace that goal implies: <span class="mono">${fmtPace(a.Treq,p)} /${uu}</span>.</li>
+    ${a.pred?`<li>Your current fitness predicts about <b class="mono">${fmtHMS(a.pred)}</b> (${a.gap>0?Math.round(a.gap*100)+'% slower than goal':'at or faster than goal'}).</li>`:'<li>No recent race result yet, so current fitness is unknown. Your plan includes a 5K time trial; enter the result in a check-in.</li>'}
+    ${isFinite(a.Kmi)?`<li>${a.e.type==='marathon'?'Runners who hit this time':`This goal is roughly equal to a ${fmtHMS(a.mEqTime)} marathon. Runners at that level`} typically average around <b class="mono">${fmtDist(a.Kmi,p)}</b> a week over their final 8 weeks (Tanda’s marathon training model, a rough guide). Your plan averages <b class="mono">${fmtDist(a.planMi,p)}</b>.</li>`:''}
+    <li>Longest run before the race: <span class="mono">${fmtDist(a.longest,p)}</span>.</li></ul>
+    ${a.cls==='bad'?`<p class="small" style="margin-top:6px">With your current running and weekly hours, this goal is out of reach this season, and pushing mileage faster raises injury risk. Use your next race or time trial to set a goal that fits, and aim this time at a later race with a longer build.</p>`:''}</div>`;
+  }
+  return h+`</div></div>`;
 }
 function runZonesCard(){
   const p=P(),rp=runPaces(p),r=p.run||{};
@@ -1276,6 +1475,9 @@ const REFS=[
  'Daniels J. Daniels’ Running Formula. 3rd ed. Human Kinetics; 2014.',
  'Blagrove RC, Howatson G, Hayes PR. Effects of strength training on the physiological determinants of middle- and long-distance running performance: a systematic review. Sports Med. 2018;48(5):1117–1149.',
  'Heiderscheit BC, Chumanov ES, Michalski MP, Wille CM, Ryan MB. Effects of step rate manipulation on joint mechanics during running. Med Sci Sports Exerc. 2011;43(2):296–302.',
+ 'Doherty C, Keogh A, Davenport J, Lawlor A, Smyth B, Caulfield B. An evaluation of the training determinants of marathon performance: a meta-analysis with meta-regression. J Sci Med Sport. 2020;23(2):182–188.',
+ 'Tanda G. Prediction of marathon performance time on the basis of training indices. J Hum Sport Exerc. 2011;6(3):511–520.',
+ 'Pizza FX, Flynn MG, Starling RD, Brolinson PG, Sigg J, Kubitz ER, Davenport RL. Run training vs cross training: influence of increased training on running economy, foot impact shock and run performance. Int J Sports Med. 1995;16(3):180–184.',
 ];
 const PRINC=[
  {t:'Most riding is easy',r:[1,2],d:'Well-trained endurance athletes do roughly 75–80% of their training at low intensity, with the hard work concentrated in a few sessions. Your plan keeps most hours in Zones 1–2 and limits hard days to one or two a week.'},
@@ -1292,6 +1494,9 @@ const PRINC=[
  {t:'Marathon taper',r:[18,6],d:'An analysis of more than 150,000 recreational marathoners linked longer, disciplined tapers (around three weeks) with faster finish times. Marathon plans with enough weeks get a three-week taper.'},
  {t:'Strength for runners',r:[22],d:'A systematic review found strength training improved running economy and other determinants of distance running performance. The same Gym program is used for runners and cyclists.'},
  {t:'Running cadence',r:[23],d:'Increasing step rate by 5–10% reduced loading at the knee and hip in a laboratory study, which is why the Skills tab suggests gradual cadence increases for runners who overstride.'},
+ {t:'What a marathon goal takes',r:[24,25],d:'Across 85 studies of marathon runners, more training (weekly distance, number of runs, longest runs) was consistently linked to faster finish times. Tanda’s model estimates marathon pace from average weekly distance and training pace over the final 8 weeks; the app uses it as a rough check on goal times. It was built on runners finishing roughly 2:47–3:36, so treat it as a guide, not a prediction.'},
+ {t:'Cross-training with cycling',r:[26],d:'Short studies suggest swapping some easy running for cycling can keep aerobic fitness, but running performance depends on running-specific adaptations. In one study, replacing run training with cycling during a heavy block worsened running economy (efficiency at a given pace). The plan keeps long runs, goal-pace runs and threshold runs as running, uses cycling for easy aerobic volume, and limits the week to about three hard sessions across both sports.'},
+ {t:'Two sports, one week',r:[1,13],d:'When you train for running and cycling races, each sport builds toward its own races. Your weekly time is split by how important and how close each race is, and the higher-priority sport keeps its key sessions when the two compete for the same days.'},
  {t:'Altitude',r:[11],d:'Aerobic capacity and performance fall steadily as altitude increases, even at moderate altitudes, so pacing targets need adjusting for high events.'},
 ];
 function vScience(){
@@ -1312,6 +1517,7 @@ function evBlock(ev){
    <label class="f" for="f-ev-dur-${n}">Expected finish time (hours)<span class="hint" id="f-ev-hint-${n}">${esc((EVINFO[ev.type||'road']||{}).hint||'')} Decimals are fine: 1.5 = 1 h 30 min.</span><input type="number" id="f-ev-dur-${n}" min="0.25" max="48" step="0.25" value="${esc(ev.durationH||(EVINFO[ev.type||'road']||{}).preset||'')}" ${ev.durationH?'':'data-auto="1"'}></label>
    <label class="f" for="f-ev-elev-${n}">Highest elevation (ft)<span class="hint">Optional. Altitude advice above 5,000 ft.</span><input type="number" id="f-ev-elev-${n}" min="0" max="20000" step="100" value="${esc(ev.elevationFt)}"></label>
    <label class="f" for="f-ev-goal-${n}">Goal<select id="f-ev-goal-${n}">${selOpt('finish',ev.goal,'Finish strong')}${selOpt('time',ev.goal,'Hit a time goal')}${selOpt('compete',ev.goal,'Compete for placing')}</select></label>
+   <label class="f" for="f-ev-gt-${n}">Goal time<span class="hint">Optional, like 3:15:00 or 1:15:00. The plan shows what it takes.</span><input type="text" id="f-ev-gt-${n}" inputmode="numeric" placeholder="h:mm:ss" value="${esc(ev.goalTime)}"></label>
   </div></div>`;
 }
 const SETTINGS=[['mixed','Indoors and outdoors'],['indoor','Mostly indoors (trainer)'],['outdoor','Mostly outdoors']];
@@ -1354,14 +1560,17 @@ function vSetup(){
    <label class="f" for="f-run-rt">Race time<span class="hint">For example 27:30 or 1:58:00.</span><input type="text" id="f-run-rt" inputmode="numeric" value="${esc((p.run||{}).raceTime)}" placeholder="h:mm:ss"></label>
    <label class="f" for="f-run-cur">Running per week now (${U(p)})<input type="number" id="f-run-cur" min="0" max="150" step="1" value="${(p.run||{}).curMiles?Math.round(toU(p.run.curMiles,p)):''}"></label>
    <label class="f" for="f-run-max">Most running per week (${U(p)})<span class="hint">At the busiest point of the plan.</span><input type="number" id="f-run-max" min="5" max="150" step="1" value="${(p.run||{}).maxMiles?Math.round(toU(p.run.maxMiles,p)):''}"></label>
+   <label class="f" for="f-run-inj" style="flex-direction:row;align-items:center;gap:10px;grid-column:1/-1"><input type="checkbox" id="f-run-inj" ${p.runInjury?'checked':''} style="width:20px;height:20px;accent-color:var(--accent)">I’ve had running injuries in the past year (for example plantar fasciitis, shin splints, strains)</label>
    <label class="f" for="f-run-long">Longest run in the last month (${U(p)})<input type="number" id="f-run-long" min="0" max="40" step="0.5" value="${(p.run||{}).longest?Math.round(toU(p.run.longest,p)*2)/2:''}"></label>
   </div></fieldset>
   <fieldset><legend>Your week now</legend><div class="grid2">
    <label class="f" for="f-cur">Hours riding per week now<input type="number" id="f-cur" min="0" max="30" step="0.5" value="${esc(p.currentHours)}"></label>
-   <label class="f" for="f-max">Most hours you can train per week<span class="hint">Until your first schedule change.</span><input type="number" id="f-max" min="2" max="30" step="0.5" value="${esc(p.maxHours)}"></label>
+   <label class="f" for="f-max">Most hours you can train per week<span class="hint">If you run and ride, this is the total for both. Until your first schedule change.</span><input type="number" id="f-max" min="2" max="30" step="0.5" value="${esc(p.maxHours)}"></label>
    <label class="f" for="f-set">Where you’ll ride<select id="f-set">${SETTINGS.map(([v,l])=>opt(v,p.setting||'mixed',l)).join('')}</select></label>
    <label class="f" for="f-start">Plan start date<input type="date" id="f-start" value="${esc(state.example?dkey(today()):p.startDate)}"></label>
    <label class="f" for="f-long">Long ride day<select id="f-long">${DAYL.map((d,i)=>opt(i,p.longDay,d)).join('')}</select></label>
+   <label class="f" for="f-longrun">Long run day<span class="hint">Used when you run.</span><select id="f-longrun">${DAYL.map((d,i)=>opt(i,p.longRunDay!=null&&p.longRunDay!==''?p.longRunDay:(+p.longDay===5?6:5),d)).join('')}</select></label>
+   <label class="f" for="f-doubles" style="flex-direction:row;align-items:center;gap:10px"><input type="checkbox" id="f-doubles" ${p.doubles?'checked':''} style="width:20px;height:20px;accent-color:var(--accent)">I can train twice in one day (for example, run in the morning, ride after work)</label>
   </div>
   <div style="margin-top:14px"><div class="f" style="font-weight:600;font-size:.88rem;margin-bottom:6px">Days you can train</div>${daysPicker('f-d',p.days)}</div></fieldset>
   <fieldset><legend>Seasons and schedule changes</legend><p class="small muted" style="margin-bottom:12px;max-width:68ch">Will your time or riding change during the year? More hours in summer, riding outside instead of on the trainer? Add each change with the date it starts.</p>
@@ -1379,17 +1588,17 @@ const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,6);
 function readForm(){
   const g=id=>document.getElementById(id);const v=id=>g(id).value.trim();
   const days=DAYN.map((_,i)=>g('f-d'+i).checked);
-  const events=[...document.querySelectorAll('#ev-list .sub')].map(el=>{const n=el.dataset.ev;return {id:el.dataset.id||uid(),name:v('f-ev-name-'+n)||'My event',date:v('f-ev-date-'+n),priority:v('f-ev-prio-'+n),type:v('f-ev-type-'+n),durationH:+v('f-ev-dur-'+n)||3,elevationFt:+v('f-ev-elev-'+n)||'',goal:v('f-ev-goal-'+n)}});
+  const events=[...document.querySelectorAll('#ev-list .sub')].map(el=>{const n=el.dataset.ev;return {id:el.dataset.id||uid(),name:v('f-ev-name-'+n)||'My event',date:v('f-ev-date-'+n),priority:v('f-ev-prio-'+n),type:v('f-ev-type-'+n),durationH:+v('f-ev-dur-'+n)||3,elevationFt:+v('f-ev-elev-'+n)||'',goal:v('f-ev-goal-'+n),goalTime:v('f-ev-gt-'+n)}});
   const changes=[...document.querySelectorAll('#chg-list .sub')].map(el=>{const n=el.dataset.chg;return {id:el.dataset.id||uid(),from:v('f-ch-from-'+n),label:v('f-ch-label-'+n),maxHours:+v('f-ch-hours-'+n)||'',maxMiles:+v('f-ch-miles-'+n)?fromU(+v('f-ch-miles-'+n),v('f-run-units')):'',setting:v('f-ch-set-'+n),longDay:+v('f-ch-long-'+n),days:DAYN.map((_,i)=>g(`f-ch-d${n}-${i}`).checked)}}).filter(c=>c.from);
   const old=state.example?{}:P(),errs=[];
   const p={name:v('f-name'),age:+v('f-age')||'',experience:v('f-exp'),strength:v('f-str'),ftp:+v('f-ftp')||'',lthr:+v('f-lthr')||'',maxhr:+v('f-maxhr')||'',
     longest:+v('f-longest')||1.5,currentHours:+v('f-cur')||3,maxHours:+v('f-max')||6,setting:v('f-set'),startDate:v('f-start')||dkey(today()),longDay:+v('f-long'),days,
-    events,changes,checkins:old.checkins||[],sports:v('f-sports')};
-  const units=v('f-run-units'),rf=id=>+v(id)?fromU(+v(id),units):'';
+    events,changes,checkins:old.checkins||[],sports:v('f-sports'),longRunDay:+v('f-longrun'),doubles:g('f-doubles').checked,runInjury:g('f-run-inj').checked};
+  const units=v('f-run-units'),rf=id=>v(id)!==''&&!isNaN(+v(id))?fromU(+v(id),units):'';
   p.run={units,raceDist:v('f-run-rd'),raceTime:v('f-run-rt'),curMiles:rf('f-run-cur'),maxMiles:rf('f-run-max'),longest:rf('f-run-long')};
   if(p.run.raceDist&&!parseTime(p.run.raceTime))errs.push('Enter your race time like 27:30 or 1:58:00.');
   if(events.some(isRun)||p.sports==='both'){
-    if(!p.run.curMiles)p.run.curMiles=10;
+    if(p.run.curMiles==='')p.run.curMiles=10;
     if(!p.run.maxMiles){p.run.maxMiles=Math.max(20,Math.round(p.run.curMiles*1.6));p.run.defaulted=true}
     if(!p.run.longest)p.run.longest=Math.max(3,Math.round(p.run.curMiles*0.3));
   }
