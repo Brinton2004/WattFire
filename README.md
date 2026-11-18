@@ -16,3 +16,12 @@ Rider data is stored in the browser (localStorage). "Save my details" exports it
 
 ## Disclaimer
 General training guidance, not medical advice. Check with a doctor before starting a new training program.
+
+## Adding videos
+All embedded videos live in [`videos.js`](videos.js). To add one:
+1. Open `videos.js` on GitHub and click the pencil (Edit) icon.
+2. Find the spot (e.g. `ex:squat` for the squat exercise, `skill:climbing` for the climbing guide).
+3. Paste a YouTube link between the quotes after `url:`, and optionally fill in `title` and `channel`.
+4. Click **Commit changes**. The live site updates in a minute or two.
+
+Videos show as a thumbnail and play inside the app when tapped (using YouTube's privacy-enhanced mode).

@@ -160,6 +160,15 @@ input[type=text],input[type=number],input[type=date],select{font:inherit;font-we
 .days label{display:flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:8px;padding:7px 10px;cursor:pointer;font-weight:600;font-size:.88rem;background:var(--bg)}
 .days input{accent-color:var(--accent)}
 .err{color:var(--z6);font-weight:600}
+.vids{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,260px),1fr));gap:12px;margin-top:12px}
+.vid{margin:0;min-width:0}
+.vid-play{position:relative;display:block;width:100%;max-width:100%;aspect-ratio:16/9;border:0;padding:0;border-radius:8px;overflow:hidden;background:var(--sunk);cursor:pointer}
+.vid-play img{width:100%;height:100%;object-fit:cover;display:block}
+.vid-icon{position:absolute;left:50%;top:50%;width:58px;height:40px;margin:-20px 0 0 -29px;border-radius:10px;background:rgba(0,0,0,.72)}
+.vid-icon::after{content:"";position:absolute;left:23px;top:11px;border-style:solid;border-width:9px 0 9px 15px;border-color:transparent transparent transparent #fff}
+.vid-play:hover .vid-icon{background:#cc0000}
+.vid iframe{display:block;width:100%;max-width:100%;aspect-ratio:16/9;border:0;border-radius:8px;background:#000}
+.vid figcaption{font-size:.84rem;margin-top:6px}
 
 @media (max-width:720px){
   nav.tabs{position:fixed;left:0;right:0;bottom:0;margin:0;background:var(--surface);border-top:1px solid var(--line);
@@ -194,6 +203,7 @@ input[type=text],input[type=number],input[type=date],select{font:inherit;font-we
 </header>
 <main class="wrap" id="app"></main>
 
+<script src="videos.js"></script>
 <script>
 /* ============ utilities ============ */
 const DAYN=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
@@ -293,6 +303,17 @@ const FEATURED={
  ],
 };
 const featList=list=>`<ul class="tips">${list.map(f=>`<li><a href="${f.u}" target="_blank" rel="noopener">${esc(f.t)} ↗</a> <span class="small muted">${f.src}</span></li>`).join('')}</ul>`;
+function ytId(u){if(!u)return null;try{const x=new URL(u);if(x.hostname.endsWith('youtu.be'))return x.pathname.slice(1).split('/')[0]||null;if(x.searchParams.get('v'))return x.searchParams.get('v');const m=x.pathname.match(/\/(embed|shorts|live)\/([\w-]{11})/);return m?m[2]:null}catch(e){return /^[\w-]{11}$/.test(u)?u:null}}
+function ytStart(u){try{const x=new URL(u);const t=x.searchParams.get('t')||x.searchParams.get('start');if(!t)return 0;if(/^\d+$/.test(t))return +t;const m=t.match(/^(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?$/);return m?(+m[1]||0)*3600+(+m[2]||0)*60+(+m[3]||0):0}catch(e){return 0}}
+function vidsFor(k){const all=Array.isArray(window.WATTFIRE_VIDEOS)?window.WATTFIRE_VIDEOS:[];return all.filter(v=>v&&[].concat(v.for).includes(k)).map(v=>({...v,id:ytId(v.url),start:ytStart(v.url)})).filter(v=>v.id&&/^[\w-]{6,20}$/.test(v.id))}
+function videoBlock(k){
+  const vs=vidsFor(k);if(!vs.length)return '';
+  return `<div class="vids">${vs.map(v=>{
+    const cap=`${esc(v.title||'Video')}${v.channel?` <span class="muted">· ${esc(v.channel)}</span>`:''}`;
+    if(state.inClaude)return `<a class="btn" href="https://www.youtube.com/watch?v=${v.id}${v.start?'&t='+v.start+'s':''}" target="_blank" rel="noopener">▶ ${cap}</a>`;
+    return `<figure class="vid"><button class="vid-play" type="button" data-act="play" data-id="${v.id}" data-start="${v.start}" data-title="${esc(v.title||'Video')}" aria-label="Play: ${esc(v.title||'video')}"><img src="https://i.ytimg.com/vi/${v.id}/hqdefault.jpg" alt="" loading="lazy"><span class="vid-icon" aria-hidden="true"></span></button><figcaption>${cap}</figcaption></figure>`;
+  }).join('')}</div>`;
+}
 const MOBILITY=[
  {name:'Half-kneeling hip flexor stretch',how:'Kneel on one knee, tuck the pelvis under, shift forward gently. 45 s each side.',why:'Opens the hips that stay closed in the riding position.'},
  {name:'Open book',how:'Lie on your side, knees bent. Rotate the top arm open toward the floor behind you. 8 slow reps each side.',why:'Restores upper-back rotation lost to long hours bent forward.'},
@@ -556,7 +577,7 @@ function eventTips(p){
 
 /* ============ state ============ */
 const LS='wattfire.v1';
-const state={view:'today',sel:null,exFilter:'all',plan:null,store:null,example:true,downloads:null};
+const state={inClaude:!!(window.claude&&window.claude.use),view:'today',sel:null,exFilter:'all',plan:null,store:null,example:true,downloads:null};
 function loadStore(){try{const s=JSON.parse(localStorage.getItem(LS)||'null');if(s&&s.profile)return s}catch(e){}return null}
 function saveStore(){try{localStorage.setItem(LS,JSON.stringify(state.store))}catch(e){}}
 (function init(){
@@ -656,7 +677,7 @@ function itemCard(it,day,week,isToday,idx){
     ${profileBars(it.steps)}
     <table class="steps"><tbody>${it.steps.map(s=>`<tr class="z${s.z}"><td>${fmtMin(s.min)}</td><td class="sw"><span></span></td><td>${esc(s.label)}<div class="target">${esc(s.z==='SS'?'Sweet spot':s.z+' '+Z(s.z).name)} · ${esc(targetStr(s.z,p))}</div></td></tr>`).join('')}</tbody></table>
     <div class="cols" style="margin-top:16px"><div><div class="eyebrow">Why this workout</div><p style="margin-top:4px">${esc(it.purpose)}</p></div>
-    <div><div class="eyebrow">Tips</div><ul class="tips">${it.tips.map(t=>`<li>${esc(t)}</li>`).join('')}</ul></div></div></section>`;
+    <div><div class="eyebrow">Tips</div><ul class="tips">${it.tips.map(t=>`<li>${esc(t)}</li>`).join('')}</ul></div></div>${videoBlock('ride:'+it.type)}</section>`;
 }
 function exampleBanner(){
   if(!state.example)return '';
@@ -712,11 +733,11 @@ function vStrength(){
   <tr><td><b>Maintenance</b></td><td>Build and peak</td><td class="mono">2–3 × 4–6</td><td>1–2</td></tr>
   <tr><td><b>None</b></td><td>Taper and race week</td><td class="mono">—</td><td>0</td></tr></tbody></table></div>
   <p class="small muted" style="margin-top:10px">Session A: squat, Romanian deadlift, push-up, dead bug, side plank. Session B: split squat, hip thrust, row, pulldown, Pallof press, calf raise. Maintenance: squat, split squat, box jump, row, plank.</p></div>
-  <div class="card"><div class="eyebrow">Watch first: GCN and GTN</div>${featList(FEATURED.strength)}<p class="small muted" style="margin-top:8px">Each exercise below links to GCN and GTN’s own videos on that movement.</p></div>
+  <div class="card"><div class="eyebrow">Watch first: GCN and GTN</div>${videoBlock('gym:intro')}${featList(FEATURED.strength)}<p class="small muted" style="margin-top:8px">Each exercise below links to GCN and GTN’s own videos on that movement.</p></div>
   <div class="filter" role="group" aria-label="Filter exercises">${pats.map(x=>`<button aria-pressed="${f===x}" data-act="exf" data-f="${x}">${x==='all'?'All':x[0].toUpperCase()+x.slice(1)}</button>`).join('')}</div>
   <div class="stack" style="gap:12px">`;
   h+=keys.map(k=>exCard(k,home)).join('');
-  h+=`</div><div class="card"><h2>Post-ride mobility</h2><p class="muted small" style="margin-top:4px">10 minutes after rides or on rest days.</p>
+  h+=`</div><div class="card"><h2>Post-ride mobility</h2><p class="muted small" style="margin-top:4px">10 minutes after rides or on rest days.</p>${videoBlock('mobility')}
   <div style="margin-top:10px">${MOBILITY.map(m=>`<div class="principle"><h3>${esc(m.name)}</h3><p>${esc(m.how)}</p><p class="small muted">${esc(m.why)}</p></div>`).join('')}</div></div></section>`;
   return h;
 }
@@ -725,23 +746,23 @@ function exCard(k,home){
   return `<article class="card ex" id="ex-${k}"><div class="ex-fig" aria-hidden="true"><svg viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round" stroke-linejoin="round">${FIG[e.pattern]||FIG.core}</svg></div>
   <div style="min-width:0"><div class="eyebrow">${esc(e.pattern)}</div><h3>${esc(e.name)}</h3><p class="small" style="margin-top:4px">${esc(e.why)}</p>
   <dl><dt>Gym</dt><dd>${esc(e.gym)}</dd><dt>Home</dt><dd>${esc(e.home)}</dd><dt>Cues</dt><dd>${e.cues.map(esc).join(' ')}</dd><dt>Avoid</dt><dd>${e.mistakes.map(esc).join(' ')}</dd></dl>
-  <p class="row" style="margin-top:10px">${ytLinks(e.vq)}</p></div></article>`;
+  ${videoBlock('ex:'+k)}<p class="row" style="margin-top:10px">${ytLinks(e.vq)}</p></div></article>`;
 }
 const ARTICLES=[
- {t:'Bike fit basics',q:'bike fit saddle height',b:['A good fit prevents most overuse pain and lets you produce power for hours. A professional fit is worth it before a big training year; these are the basics to check.','<b>Saddle height:</b> at the bottom of the stroke, with your heel on the pedal, your leg should be straight. With the ball of the foot on the pedal, that leaves a slight bend (roughly 25–35° at the knee).','<b>Saddle position:</b> level, or nose down a degree or two. Knee pain at the front often means too low; pain behind the knee often means too high.','<b>Reach:</b> elbows slightly bent and shoulders relaxed. Numb hands or a sore neck usually means too much reach or too much weight on the hands.','<b>Cleats:</b> ball of the foot over the pedal axle; let the feet sit at their natural angle.']},
- {t:'Pedaling and cadence',q:'pedalling technique cadence',b:['Most riders are efficient between about 80 and 95 rpm on flat ground and somewhat lower on steep climbs. There is no single right cadence; smooth matters more than fast.','<b>Drill: high-cadence spin-ups.</b> During an endurance ride, raise cadence gradually over 1 minute until you start bouncing on the saddle, then back off slightly and hold 30 seconds. 4–5 repeats.','<b>Drill: single-leg focus.</b> On a trainer, unclip one foot and pedal 30–60 seconds with the other, aiming for no “dead spot” at the top. Switch legs.','Relax your upper body. Tension in the shoulders and grip wastes energy over long events.']},
- {t:'Climbing',q:'how to climb',b:['<b>Seated</b> climbing is more efficient for steady grades: slide back on the saddle, relax the arms, and keep a steady rhythm.','<b>Standing</b> uses more energy but uses different muscles and helps on steep pitches. Shift up one or two gears as you stand so your cadence doesn’t spike, and let the bike rock gently under you.','<b>Pace the climb, not the moment.</b> Start a long climb at an effort you could hold to the top. On long events, climbs are where most riders overspend.','<b>On loose climbs (MTB/gravel):</b> stay seated to keep weight on the rear wheel, lower your chest toward the bars to keep the front wheel down, and keep pedal strokes smooth to avoid spinning out.']},
- {t:'Descending and cornering',q:'descending cornering',b:['<b>Look where you want to go</b>, through the exit of the corner, not at the obstacle.','<b>Brake before the corner</b>, in a straight line, then release and roll through.','<b>Outside pedal down, weight on it</b>, inside knee and elbow relaxed. Lean the bike more than your body.','<b>Mountain bike descending:</b> use the “attack position”: pedals level, knees and elbows bent, hips back, eyes up. Your arms and legs are the suspension; let the bike move under you.','Practice the same corner several times at increasing speed rather than riding many corners once.']},
- {t:'Rough terrain and trail skills',q:'gravel skills',b:['<b>Light hands, heavy feet.</b> Weight goes through the pedals, not the handlebar.','<b>Speed is your friend</b> over rocks and roots. Momentum carries you over obstacles that stop you at walking pace.','<b>Line choice:</b> look 3–5 seconds ahead and pick the smoothest line early.','<b>Drills for the skills ride:</b> track stands (balance stopped for 10+ seconds), tight figure-eights in a parking lot, riding over a 2×4 on the ground, braking hard to a stop in a marked distance, unclipping quickly on both sides.','Practice walking and pushing your bike uphill efficiently. In long mountain events most riders walk some sections.']},
- {t:'Fueling and hydration',q:'fuelling nutrition',b:['<b>Before:</b> a carb-rich meal 2–4 hours before key sessions and events.','<b>During:</b> under 1 hour, water is usually enough. 1–2.5 hours: 30–60 g carbohydrate per hour. Over 2.5 hours: 60–90 g per hour, using glucose and fructose blends at higher amounts.','<b>Train the gut:</b> start at what you tolerate and add 10 g per hour every week or two on long rides.','<b>Fluids:</b> drink to thirst, typically 400–800 ml per hour depending on heat and size. Add sodium on long or hot rides. Weigh yourself before and after long rides: losing more than 2–3% of body weight means drink more next time.','<b>After:</b> carbohydrate plus about 20–40 g of protein within a couple of hours. Daily protein of about 1.6 g per kg supports strength gains.']},
- {t:'Altitude',q:'altitude',b:['Less oxygen at altitude lowers aerobic power, and the effect grows as you go higher. The same power feels harder and your heart rate runs higher.','<b>Pace by feel and power, not your sea-level heart rate.</b> Expect to ride somewhat slower on climbs.','<b>Timing:</b> adaptation takes weeks. Arriving 10–14+ days early helps; arriving the day before minimizes the time you feel worst. The days in between are often the hardest.','<b>Hydrate more</b>: the air is dry and you breathe more.','<b>Iron:</b> your body needs iron to adapt. Ask your doctor about checking ferritin a few months before the event. Don’t supplement without testing.','Headache, nausea or unusual breathlessness at rest are warning signs. Descend and seek medical help if they get worse.']},
- {t:'Pacing long events',q:'pacing',b:['The most common mistake is starting too hard. Plan to ride the first hour at endurance effort even if others go faster.','<b>Climb steady, descend smart, eat constantly.</b> Most time is lost by slowing down late, not by riding too slowly early.','Break the event into segments with a plan for each: effort, food, water, and where you’ll refill.','If there are time cutoffs, write the target times on tape on your top tube.']},
- {t:'Recovery and sleep',q:'recovery sleep',b:['Fitness is built while you recover, not while you train. Easy days should be truly easy so hard days can be truly hard.','<b>Sleep</b> 7–9 hours. It is the most effective recovery tool.','<b>Warning signs</b> of doing too much: resting heart rate up more than 5–7 bpm for several days, poor sleep, irritability, heavy legs that don’t improve with rest. Take extra easy days.','Recovery weeks are part of the plan, not a break from it.']},
+ {t:'Bike fit basics',k:'fit',q:'bike fit saddle height',b:['A good fit prevents most overuse pain and lets you produce power for hours. A professional fit is worth it before a big training year; these are the basics to check.','<b>Saddle height:</b> at the bottom of the stroke, with your heel on the pedal, your leg should be straight. With the ball of the foot on the pedal, that leaves a slight bend (roughly 25–35° at the knee).','<b>Saddle position:</b> level, or nose down a degree or two. Knee pain at the front often means too low; pain behind the knee often means too high.','<b>Reach:</b> elbows slightly bent and shoulders relaxed. Numb hands or a sore neck usually means too much reach or too much weight on the hands.','<b>Cleats:</b> ball of the foot over the pedal axle; let the feet sit at their natural angle.']},
+ {t:'Pedaling and cadence',k:'pedaling',q:'pedalling technique cadence',b:['Most riders are efficient between about 80 and 95 rpm on flat ground and somewhat lower on steep climbs. There is no single right cadence; smooth matters more than fast.','<b>Drill: high-cadence spin-ups.</b> During an endurance ride, raise cadence gradually over 1 minute until you start bouncing on the saddle, then back off slightly and hold 30 seconds. 4–5 repeats.','<b>Drill: single-leg focus.</b> On a trainer, unclip one foot and pedal 30–60 seconds with the other, aiming for no “dead spot” at the top. Switch legs.','Relax your upper body. Tension in the shoulders and grip wastes energy over long events.']},
+ {t:'Climbing',k:'climbing',q:'how to climb',b:['<b>Seated</b> climbing is more efficient for steady grades: slide back on the saddle, relax the arms, and keep a steady rhythm.','<b>Standing</b> uses more energy but uses different muscles and helps on steep pitches. Shift up one or two gears as you stand so your cadence doesn’t spike, and let the bike rock gently under you.','<b>Pace the climb, not the moment.</b> Start a long climb at an effort you could hold to the top. On long events, climbs are where most riders overspend.','<b>On loose climbs (MTB/gravel):</b> stay seated to keep weight on the rear wheel, lower your chest toward the bars to keep the front wheel down, and keep pedal strokes smooth to avoid spinning out.']},
+ {t:'Descending and cornering',k:'descending',q:'descending cornering',b:['<b>Look where you want to go</b>, through the exit of the corner, not at the obstacle.','<b>Brake before the corner</b>, in a straight line, then release and roll through.','<b>Outside pedal down, weight on it</b>, inside knee and elbow relaxed. Lean the bike more than your body.','<b>Mountain bike descending:</b> use the “attack position”: pedals level, knees and elbows bent, hips back, eyes up. Your arms and legs are the suspension; let the bike move under you.','Practice the same corner several times at increasing speed rather than riding many corners once.']},
+ {t:'Rough terrain and trail skills',k:'trail',q:'gravel skills',b:['<b>Light hands, heavy feet.</b> Weight goes through the pedals, not the handlebar.','<b>Speed is your friend</b> over rocks and roots. Momentum carries you over obstacles that stop you at walking pace.','<b>Line choice:</b> look 3–5 seconds ahead and pick the smoothest line early.','<b>Drills for the skills ride:</b> track stands (balance stopped for 10+ seconds), tight figure-eights in a parking lot, riding over a 2×4 on the ground, braking hard to a stop in a marked distance, unclipping quickly on both sides.','Practice walking and pushing your bike uphill efficiently. In long mountain events most riders walk some sections.']},
+ {t:'Fueling and hydration',k:'fueling',q:'fuelling nutrition',b:['<b>Before:</b> a carb-rich meal 2–4 hours before key sessions and events.','<b>During:</b> under 1 hour, water is usually enough. 1–2.5 hours: 30–60 g carbohydrate per hour. Over 2.5 hours: 60–90 g per hour, using glucose and fructose blends at higher amounts.','<b>Train the gut:</b> start at what you tolerate and add 10 g per hour every week or two on long rides.','<b>Fluids:</b> drink to thirst, typically 400–800 ml per hour depending on heat and size. Add sodium on long or hot rides. Weigh yourself before and after long rides: losing more than 2–3% of body weight means drink more next time.','<b>After:</b> carbohydrate plus about 20–40 g of protein within a couple of hours. Daily protein of about 1.6 g per kg supports strength gains.']},
+ {t:'Altitude',k:'altitude',q:'altitude',b:['Less oxygen at altitude lowers aerobic power, and the effect grows as you go higher. The same power feels harder and your heart rate runs higher.','<b>Pace by feel and power, not your sea-level heart rate.</b> Expect to ride somewhat slower on climbs.','<b>Timing:</b> adaptation takes weeks. Arriving 10–14+ days early helps; arriving the day before minimizes the time you feel worst. The days in between are often the hardest.','<b>Hydrate more</b>: the air is dry and you breathe more.','<b>Iron:</b> your body needs iron to adapt. Ask your doctor about checking ferritin a few months before the event. Don’t supplement without testing.','Headache, nausea or unusual breathlessness at rest are warning signs. Descend and seek medical help if they get worse.']},
+ {t:'Pacing long events',k:'pacing',q:'pacing',b:['The most common mistake is starting too hard. Plan to ride the first hour at endurance effort even if others go faster.','<b>Climb steady, descend smart, eat constantly.</b> Most time is lost by slowing down late, not by riding too slowly early.','Break the event into segments with a plan for each: effort, food, water, and where you’ll refill.','If there are time cutoffs, write the target times on tape on your top tube.']},
+ {t:'Recovery and sleep',k:'recovery',q:'recovery sleep',b:['Fitness is built while you recover, not while you train. Easy days should be truly easy so hard days can be truly hard.','<b>Sleep</b> 7–9 hours. It is the most effective recovery tool.','<b>Warning signs</b> of doing too much: resting heart rate up more than 5–7 bpm for several days, poor sleep, irritability, heavy legs that don’t improve with rest. Take extra easy days.','Recovery weeks are part of the plan, not a break from it.']},
 ];
 function vTechnique(){
   return `<section class="stack"><div><div class="eyebrow">Skills</div><h1 style="margin-top:4px">Form and technique</h1>
   <p class="muted" style="margin-top:6px;max-width:68ch">Riding skills and race craft. Tap a topic to open it. Each topic links to GCN and GTN videos on it.</p></div>
-  <div class="card">${ARTICLES.map((a,i)=>`<details class="art" ${i===0?'open':''}><summary>${esc(a.t)}</summary><div class="body">${a.b.map(x=>`<p>${x}</p>`).join('')}${a.t==='Bike fit basics'?featList(FEATURED.fit):''}<p class="row">${ytLinks(a.q)}</p></div></details>`).join('')}</div></section>`;
+  <div class="card">${ARTICLES.map((a,i)=>`<details class="art" ${i===0?'open':''}><summary>${esc(a.t)}</summary><div class="body">${a.b.map(x=>`<p>${x}</p>`).join('')}${videoBlock('skill:'+a.k)}${a.t==='Bike fit basics'?featList(FEATURED.fit):''}<p class="row">${ytLinks(a.q)}</p></div></details>`).join('')}</div></section>`;
 }
 const REFS=[
  'Seiler KS, Kjerland GØ. Quantifying training intensity distribution in elite endurance athletes: is there evidence for an “optimal” distribution? Scand J Med Sci Sports. 2006;16(1):49–56.',
@@ -903,6 +924,7 @@ document.addEventListener('click',e=>{
   else if(a==='today'){state.sel=dkey(today());render()}
   else if(a==='wk'){state.sel=dkey(addDays(parse(state.sel),+t.dataset.n));render()}
   else if(a==='goto'){state.sel=t.dataset.k;location.hash='#today'}
+  else if(a==='play'){const id=t.dataset.id;if(!/^[\w-]{6,20}$/.test(id))return;const st=+t.dataset.start||0;const f=document.createElement('iframe');f.src=`https://www.youtube-nocookie.com/embed/${id}?autoplay=1&rel=0&playsinline=1${st?'&start='+st:''}`;f.title=t.dataset.title||'Video';f.allow='accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share';f.allowFullscreen=true;f.referrerPolicy='strict-origin-when-cross-origin';t.replaceWith(f)}
   else if(a==='exf'){state.exFilter=t.dataset.f;render()}
   else if(a==='ex'){state.exFilter='all';location.hash='#strength';setTimeout(()=>{const el=document.getElementById('ex-'+t.dataset.x);if(el)el.scrollIntoView({block:'start'})},30)}
   else if(a==='pdf'){try{offer(`training-plan-${dkey(state.plan.eventDate)}.pdf`,makePDF())}catch(err){toast('Couldn’t build the PDF.')}}
@@ -931,6 +953,5 @@ document.addEventListener('submit',e=>{
   toast('Plan built');location.hash='#today';render(true);
 });
 render();
-state.inClaude=!!(window.claude&&window.claude.use);
 (async()=>{try{if(window.claude&&window.claude.use){state.downloads=await window.claude.use('downloads')}}catch(_){}state.downloadsChecked=true;if(state.view==='plan')render()})();
 </script>
